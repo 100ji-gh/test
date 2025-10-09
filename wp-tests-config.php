@@ -13,7 +13,6 @@ define( 'DB_CHARSET', 'utf8' );
 define( 'DB_COLLATE', '' );
 
 // PHPCS 例外：テスト環境では $table_prefix を定義する必要がある。
-// phpcs:ignore WordPress.Variables.GlobalVariables.OverrideProhibited
-$table_prefix = 'wptests_';
+$table_prefix = 'wptests_'; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
 
 define( 'WP_DEBUG', true );
