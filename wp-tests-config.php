@@ -1,5 +1,5 @@
 <?php
-// 環境変数を一度取り出す（短縮三項 ?: を避ける）
+// 環境変数を一度取り出す（短縮三項 ?: を使わない）
 $env_db_name = getenv( 'WP_DB_NAME' );
 $env_db_user = getenv( 'WP_DB_USER' );
 $env_db_pass = getenv( 'WP_DB_PASS' );
@@ -12,7 +12,7 @@ define( 'DB_HOST', $env_db_host ? $env_db_host : '127.0.0.1' );
 define( 'DB_CHARSET', 'utf8' );
 define( 'DB_COLLATE', '' );
 
-// PHPCS 例外：テスト環境では $table_prefix を定義する必要がある
+// PHPCS 例外：テスト環境では $table_prefix を定義する必要がある。
 // phpcs:ignore WordPress.Variables.GlobalVariables.OverrideProhibited
 $table_prefix = 'wptests_';
 
