@@ -62,6 +62,9 @@ jobs:
           mkdir -p "$THEME_DIR"
           curl -L -o /tmp/ttf.zip https://downloads.wordpress.org/theme/twentytwentyfour.latest-stable.zip
           unzip -o /tmp/ttf.zip -d "$THEME_DIR"
+      - name: List themes (debug)
+        run: ls -la "${{ github.workspace }}/vendor/wp-phpunit/wp-phpunit/wordpress/wp-content/themes"
+
 
       # 最後に WP テストを実行
       - name: PHPUnit (WP)
