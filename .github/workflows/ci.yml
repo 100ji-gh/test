@@ -42,6 +42,11 @@ jobs:
       - name: Install deps
         run: composer install --no-interaction --prefer-dist
 
+      - name: Set up WordPress & WP test library
+        uses: sjinks/setup-wordpress-test-library@master
+        with:
+          version: latest
+
       - name: PHP syntax
         run: composer lint
 
