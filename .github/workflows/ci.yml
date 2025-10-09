@@ -51,13 +51,19 @@ jobs:
       - name: PHPStan
         run: vendor/bin/phpstan analyse -c phpstan.neon
 
+      # 追加：unzip を用意（ランナーには大体入っていますが保険）
+      - name: Ensure unzip
+        run: sudo apt-get update && sudo apt-get install -y unzip
+
+      # 追加：Twenty Twenty-Four テーマを取得して展開
+      - name: Fetch Twenty Twenty-Four theme
+        run: |
+          THEME_DIR="${{ github.workspace }}/vendor/wp-phpunit/wp-phpunit/wordpress/wp-content/themes"
+          mkdir -p "$THEME_DIR"
+          curl -L -o /tmp/ttf.zip https://downloads.wordpress.org/theme/twentytwentyfour.latest-stable.zip
+          unzip -o /tmp/ttf.zip -d "$THEME_DIR"
+
+      # 最後に WP テストを実行
       - name: PHPUnit (WP)
         run: vendor/bin/phpunit -c phpunit.xml.dist
 
-      # twentytwentyfour が見つからない場合は、以下を有効化して取得
-      # - name: Fetch Twenty Twenty-Four theme
-      #   run: |
-      #     THEME_DIR="${{ github.workspace }}/vendor/wp-phpunit/wp-phpunit/wordpress/wp-content/themes"
-      #     mkdir -p "$THEME_DIR"
-      #     curl -L -o /tmp/ttf.zip https://downloads.wordpress.org/theme/twentytwentyfour.latest-stable.zip
-      #     unzip -o /tmp/ttf.zip -d "$THEME_DIR"
