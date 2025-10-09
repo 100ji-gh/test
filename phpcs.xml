@@ -1,0 +1,7 @@
+<?xml version="1.0"?>
+<ruleset name="WDA CS">
+  <rule ref="WordPress-Extra"/>
+  <file>./</file>
+  <exclude-pattern>vendor/*</exclude-pattern>
+  <exclude-pattern>tests/*</exclude-pattern>
+</ruleset>
