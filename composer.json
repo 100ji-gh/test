@@ -15,5 +15,10 @@
     "cs:fix": "phpcbf -p",
     "stan": "phpstan analyse -c phpstan.neon",
     "test": "phpunit -c phpunit.xml.dist"
+  },
+  "config": {
+    "allow-plugins": {
+      "dealerdirect/phpcodesniffer-composer-installer": true
+    }
   }
 }
