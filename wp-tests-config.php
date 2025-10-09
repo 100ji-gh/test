@@ -1,10 +1,17 @@
 <?php
 // phpcs:disable WordPress.WP.CapitalPDangit
 
-$env_db_name = getenv( 'WP_DB_NAME' ) ?: 'wordpress_test';
-$env_db_user = getenv( 'WP_DB_USER' ) ?: 'wp';
-$env_db_pass = getenv( 'WP_DB_PASS' ) ?: 'wp';
-$env_db_host = getenv( 'WP_DB_HOST' ) ?: '127.0.0.1';
+$env_db_name_raw = getenv( 'WP_DB_NAME' );
+$env_db_name     = $env_db_name_raw ? $env_db_name_raw : 'wordpress_test';
+
+$env_db_user_raw = getenv( 'WP_DB_USER' );
+$env_db_user     = $env_db_user_raw ? $env_db_user_raw : 'wp';
+
+$env_db_pass_raw = getenv( 'WP_DB_PASS' );
+$env_db_pass     = $env_db_pass_raw ? $env_db_pass_raw : 'wp';
+
+$env_db_host_raw = getenv( 'WP_DB_HOST' );
+$env_db_host     = $env_db_host_raw ? $env_db_host_raw : '127.0.0.1';
 
 if ( ! defined( 'DB_NAME' ) ) {
 	define( 'DB_NAME', $env_db_name );
