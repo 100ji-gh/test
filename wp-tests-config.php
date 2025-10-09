@@ -25,13 +25,19 @@ if ( ! defined( 'DB_COLLATE' ) ) {
 	define( 'DB_COLLATE', '' );
 }
 
-// WP規約の警告対象なので、この1行だけ除外。
+// PHPCS対応：この1行だけはWPの「グローバル上書き」警告を抑制
 $table_prefix = 'wptests_'; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
 
 if ( ! defined( 'WP_DEBUG' ) ) {
 	define( 'WP_DEBUG', true );
 }
 
+// ★ WordPress本体の場所（CIで展開する先）を指す
+if ( ! defined( 'ABSPATH' ) ) {
+	define( 'ABSPATH', __DIR__ . '/vendor/wp-phpunit/wp-phpunit/wordpress/' );
+}
+
+// WPテスト基盤が要求する定数
 if ( ! defined( 'WP_TESTS_DOMAIN' ) ) {
 	define( 'WP_TESTS_DOMAIN', 'example.org' );
 }
