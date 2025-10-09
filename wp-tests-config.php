@@ -16,6 +16,10 @@ define( 'DB_COLLATE', '' );
 $table_prefix = 'wptests_'; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
 
 define( 'WP_DEBUG', true );
+// WordPress 本体（wp-phpunit が展開した wordpress ディレクトリ）への絶対パス。
+if ( ! defined( 'ABSPATH' ) ) {
+	define( 'ABSPATH', __DIR__ . '/vendor/wp-phpunit/wp-phpunit/wordpress/' );
+}
 
 define( 'WP_TESTS_DOMAIN', 'example.org' );
 define( 'WP_TESTS_EMAIL', 'admin@example.org' );
