@@ -27,7 +27,7 @@ jobs:
       WP_DB_PASS: wp
       WP_DB_HOST: 127.0.0.1
       WP_PHPUNIT__TESTS_CONFIG: ${{ github.workspace }}/wp-tests-config.php
-      WP_TESTS_DIR: ${{ github.workspace }}/vendor/wp-phpunit/wp-phpunit
+      WP_TESTS_DIR: ${{ github.workspace }}/vendor/wp-phpunit/wp-phpunit  # ← 手動構成では明示
 
     steps:
       - uses: actions/checkout@v4
@@ -42,11 +42,6 @@ jobs:
       - name: Install deps
         run: composer install --no-interaction --prefer-dist
 
-      - name: Set up WordPress & WP test library
-        uses: sjinks/setup-wordpress-test-library@master
-        with:
-          version: latest
-
       - name: PHP syntax
         run: composer lint
 
@@ -56,22 +51,26 @@ jobs:
       - name: PHPStan
         run: vendor/bin/phpstan analyse -c phpstan.neon
 
-      # 追加：unzip を用意（ランナーには大体入っていますが保険）
       - name: Ensure unzip
         run: sudo apt-get update && sudo apt-get install -y unzip
 
-      # 追加：Twenty Twenty-Four テーマを取得して展開
-      - name: Fetch Twenty Twenty-Four theme
+      # ★ WordPress本体を取得→vendor/wp-phpunit/wp-phpunit/wordpress へ展開
+      - name: Fetch WordPress core (latest)
         run: |
-          THEME_DIR="${{ github.workspace }}/vendor/wp-phpunit/wp-phpunit/wordpress/wp-content/themes"
-          mkdir -p "$THEME_DIR"
-          curl -L -o /tmp/ttf.zip https://downloads.wordpress.org/theme/twentytwentyfour.latest-stable.zip
-          unzip -o /tmp/ttf.zip -d "$THEME_DIR"
-      - name: List themes (debug)
-        run: ls -la "${{ github.workspace }}/vendor/wp-phpunit/wp-phpunit/wordpress/wp-content/themes"
+          WP_DIR="${{ github.workspace }}/vendor/wp-phpunit/wp-phpunit/wordpress"
+          rm -rf "$WP_DIR"
+          curl -L -o /tmp/wordpress.zip https://wordpress.org/latest.zip
+          unzip -q /tmp/wordpress.zip -d /tmp
+          mv /tmp/wordpress "$WP_DIR"
 
+      # MySQLが応答するまで待機（稀なタイミング問題対策）
+      - name: Wait for MySQL
+        run: |
+          for i in {1..30}; do
+            if mysqladmin ping -h 127.0.0.1 --silent; then exit 0; fi
+            sleep 1
+          done
+          exit 1
 
-      # 最後に WP テストを実行
       - name: PHPUnit (WP)
         run: vendor/bin/phpunit -c phpunit.xml.dist
-
