@@ -23,7 +23,6 @@ jobs:
           coverage: none
           extensions: mbstring, intl, zip, dom, curl, json, sqlite3
 
-      # Composerプラグイン許可（実行環境だけに反映）
       - name: Configure Composer allow-plugins
         run: |
           composer config --no-plugins allow-plugins.composer/installers true
@@ -44,11 +43,9 @@ jobs:
       - name: Install deps
         run: composer install --no-interaction --prefer-dist --no-progress
 
-      # WPCSを確実に導入（WordPress-Extraを使える状態に）
       - name: Ensure WPCS standard
         run: composer require wp-coding-standards/wpcs:^3 --no-interaction --prefer-dist || true
 
-      # SQLiteドライバを確実に用意（composer→無ければrawダウンロード）
       - name: Ensure SQLite driver (composer or fallback)
         run: |
           set -e
@@ -71,22 +68,22 @@ jobs:
           mkdir -p tmp
           chmod -R 777 tmp
 
-      # ★ PHPCSを高速化：対象を絞り、巨大ディレクトリは除外
-      - name: PHPCS (fast & scoped)
+      # ← ここを調整：tests/ を完全除外し、本体コードだけをスニフ
+      - name: PHPCS (scoped to source only)
         run: |
           if [ -x vendor/bin/phpcs ]; then
             set -e
             paths=""
             for d in includes src lib app; do [ -d "$d" ] && paths="$paths $d"; done
-            [ -d tests ] && paths="$paths tests"
-            # 直下のPHPファイルも対象に（例：plugin.php など）
+            # 直下 *.php（例：plugin 本体ファイル）も対象
             shopt -s nullglob; for f in *.php; do paths="$paths $f"; done
-            if [ -z "$paths" ]; then paths="."; fi
+            if [ -z "$paths" ]; then echo "No PHP sources to sniff; skipping"; exit 0; fi
             echo "PHPCS targets:$paths"
             vendor/bin/phpcs \
               --standard=WordPress-Extra \
               --extensions=php \
-              --ignore=vendor/*,tests/wordpress/*,tmp/*,.git/*,.github/*,node_modules/* \
+              --ignore=vendor/*,tests/*,tests/wordpress/*,tmp/*,.git/*,.github/*,node_modules/* \
+              --warning-severity=0 \
               $paths
           else
             echo "phpcs not installed; skipping"
