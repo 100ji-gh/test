@@ -23,11 +23,12 @@ jobs:
           coverage: none
           extensions: mbstring, intl, zip, dom, curl, json, sqlite3
 
-      # 🔧 Composerプラグインを事前に許可（commit不要・ジョブ内だけ反映）
+      # Composer プラグインをあらかじめ許可（実行環境にだけ反映）
       - name: Configure Composer allow-plugins
         run: |
           composer config --no-plugins allow-plugins.composer/installers true
           composer config --no-plugins allow-plugins.dealerdirect/phpcodesniffer-composer-installer true
+          composer config --no-plugins allow-plugins.johnpbloch/wordpress-core-installer true
 
       - name: Get Composer cache dir
         id: composer-cache
@@ -43,16 +44,24 @@ jobs:
       - name: Install deps
         run: composer install --no-interaction --prefer-dist --no-progress
 
-      - name: Ensure SQLite driver
+      # ← ここを強化：インストール + 存在保証 + 必要なら生ファイルDLのフェイルセーフ
+      - name: Ensure SQLite driver (composer or fallback)
         run: |
-          if [ ! -f vendor/aaemnnosttv/wp-sqlite-db/src/db.php ]; then
-            composer require aaemnnosttv/wp-sqlite-db:^1.3 --no-interaction --prefer-dist
+          set -e
+          if ! test -f vendor/aaemnnosttv/wp-sqlite-db/src/db.php; then
+            composer require aaemnnosttv/wp-sqlite-db:^1.3 --no-interaction --prefer-dist || true
           fi
+          if ! test -f vendor/aaemnnosttv/wp-sqlite-db/src/db.php; then
+            echo "[fallback] composer経由で見つからないためraw取得します"
+            mkdir -p vendor/aaemnnosttv/wp-sqlite-db/src
+            curl -sSLo vendor/aaemnnosttv/wp-sqlite-db/src/db.php \
+              https://raw.githubusercontent.com/aaemnnosttv/wp-sqlite-db/v1.3.2/src/db.php
+          fi
+          test -f vendor/aaemnnosttv/wp-sqlite-db/src/db.php || (echo "db.php still missing"; exit 1)
 
       - name: Prepare WP tests (SQLite)
         run: |
           set -e
-          test -f vendor/aaemnnosttv/wp-sqlite-db/src/db.php || (echo "SQLite driver missing after composer steps"; exit 1)
           mkdir -p tests/wordpress/wp-content
           cp vendor/aaemnnosttv/wp-sqlite-db/src/db.php tests/wordpress/wp-content/db.php
           mkdir -p tmp
