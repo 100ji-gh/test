@@ -1,0 +1,63 @@
+name: PHP CI
+
+on:
+  pull_request:
+    branches: [ "main" ]
+  push:
+    branches: [ "feature/**" ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        php: [ '8.2' ]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          tools: composer:v2
+          coverage: none
+          extensions: mbstring, intl, zip, dom, curl, json, sqlite3
+
+      - name: Get Composer cache dir
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
+
+      - name: Cache Composer
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
+          restore-keys: ${{ runner.os }}-composer-
+
+      - name: Install deps
+        run: composer install --no-interaction --prefer-dist
+
+      - name: Prepare WP tests (SQLite)
+        run: |
+          mkdir -p tests/wordpress/wp-content
+          cp vendor/aaemnnosttv/wp-sqlite-db/src/db.php tests/wordpress/wp-content/db.php || true
+          mkdir -p tmp && chmod -R 777 tmp || true
+
+      - name: PHPCS (if present)
+        run: |
+          if [ -x vendor/bin/phpcs ]; then
+            vendor/bin/phpcs --standard=WordPress-Extra .
+          else
+            echo "phpcs not installed; skipping"
+          fi
+
+      - name: PHPStan (if present)
+        run: |
+          if [ -x vendor/bin/phpstan ]; then
+            vendor/bin/phpstan analyse
+          else
+            echo "phpstan not installed; skipping"
+          fi
+
+      - name: PHPUnit
+        run: vendor/bin/phpunit -c phpunit.xml.dist
