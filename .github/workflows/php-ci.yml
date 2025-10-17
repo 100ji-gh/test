@@ -23,7 +23,6 @@ jobs:
           coverage: none
           extensions: mbstring, intl, zip, dom, curl, json, sqlite3
 
-      # Composer プラグイン許可（実行環境だけに反映）
       - name: Configure Composer allow-plugins
         run: |
           composer config --no-plugins allow-plugins.composer/installers true
@@ -47,7 +46,6 @@ jobs:
       - name: Ensure WPCS standard
         run: composer require wp-coding-standards/wpcs:^3 --no-interaction --prefer-dist || true
 
-      # SQLiteドライバを確実に用意（composer→無ければrawダウンロード）
       - name: Ensure SQLite driver (composer or fallback)
         run: |
           set -e
@@ -70,14 +68,12 @@ jobs:
           mkdir -p tmp
           chmod -R 777 tmp
 
-      # PHPCS：ソースのみに限定（巨大ディレクトリは除外）
       - name: PHPCS (scoped to source only)
         run: |
           if [ -x vendor/bin/phpcs ]; then
             set -e
             paths=""
             for d in includes src lib app; do [ -d "$d" ] && paths="$paths $d"; done
-            # 直下 *.php（例：プラグイン本体）も対象
             shopt -s nullglob; for f in *.php; do paths="$paths $f"; done
             if [ -z "$paths" ]; then echo "No PHP sources to sniff; skipping"; exit 0; fi
             echo "PHPCS targets:$paths"
@@ -91,27 +87,28 @@ jobs:
             echo "phpcs not installed; skipping"
           fi
 
-      # ★ PHPStan：リポの phpstan.neon を使わず、CI内だけの最小設定であなたのソースだけ解析
+      # ▼ ここを修正：ヒアドキュメントではなく echo で CI専用 phpstan 設定を作成
       - name: PHPStan (scoped & CI config)
         run: |
           if [ -x vendor/bin/phpstan ]; then
             set -e
-            cat > phpstan-ci.neon <<'NEON'
-            parameters:
-              level: 6
-              treatPhpDocTypesAsCertain: false
-              checkMissingIterableValueType: false
-              paths: []   # CLI引数で渡す
-              excludePaths:
-                analyse:
-                  - vendor/*
-                  - tests/*
-                  - tests/wordpress/*
-                  - tmp/*
-                  - .github/*
-                  - wp-content/*
-                  - node_modules/*
-            NEON
+            {
+              echo 'parameters:'
+              echo '  level: 6'
+              echo '  treatPhpDocTypesAsCertain: false'
+              echo '  checkMissingIterableValueType: false'
+              echo '  paths: []'
+              echo '  excludePaths:'
+              echo '    analyse:'
+              echo '      - vendor/*'
+              echo '      - tests/*'
+              echo '      - tests/wordpress/*'
+              echo '      - tmp/*'
+              echo '      - .github/*'
+              echo '      - wp-content/*'
+              echo '      - node_modules/*'
+            } > phpstan-ci.neon
+
             paths=""
             for d in includes src lib app; do [ -d "$d" ] && paths="$paths $d"; done
             shopt -s nullglob; for f in *.php; do paths="$paths $f"; done
