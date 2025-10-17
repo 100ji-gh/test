@@ -35,13 +35,22 @@ jobs:
           restore-keys: ${{ runner.os }}-composer-
 
       - name: Install deps
-        run: composer install --no-interaction --prefer-dist
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Ensure SQLite driver
+        run: |
+          if [ ! -f vendor/aaemnnosttv/wp-sqlite-db/src/db.php ]; then
+            composer require aaemnnosttv/wp-sqlite-db:^1.3 --no-interaction --prefer-dist
+          fi
 
       - name: Prepare WP tests (SQLite)
         run: |
+          set -e
+          test -f vendor/aaemnnosttv/wp-sqlite-db/src/db.php || (echo "SQLite driver missing after composer steps"; exit 1)
           mkdir -p tests/wordpress/wp-content
-          cp vendor/aaemnnosttv/wp-sqlite-db/src/db.php tests/wordpress/wp-content/db.php || true
-          mkdir -p tmp && chmod -R 777 tmp || true
+          cp vendor/aaemnnosttv/wp-sqlite-db/src/db.php tests/wordpress/wp-content/db.php
+          mkdir -p tmp
+          chmod -R 777 tmp
 
       - name: PHPCS (if present)
         run: |
