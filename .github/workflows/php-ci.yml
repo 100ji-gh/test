@@ -23,7 +23,7 @@ jobs:
           coverage: none
           extensions: mbstring, intl, zip, dom, curl, json, sqlite3
 
-      # Composer プラグインをあらかじめ許可（実行環境にだけ反映）
+      # Composerプラグイン許可（実行環境だけに反映）
       - name: Configure Composer allow-plugins
         run: |
           composer config --no-plugins allow-plugins.composer/installers true
@@ -44,7 +44,11 @@ jobs:
       - name: Install deps
         run: composer install --no-interaction --prefer-dist --no-progress
 
-      # ← ここを強化：インストール + 存在保証 + 必要なら生ファイルDLのフェイルセーフ
+      # WPCSを確実に導入（WordPress-Extraを使える状態に）
+      - name: Ensure WPCS standard
+        run: composer require wp-coding-standards/wpcs:^3 --no-interaction --prefer-dist || true
+
+      # SQLiteドライバを確実に用意（composer→無ければrawダウンロード）
       - name: Ensure SQLite driver (composer or fallback)
         run: |
           set -e
@@ -52,7 +56,7 @@ jobs:
             composer require aaemnnosttv/wp-sqlite-db:^1.3 --no-interaction --prefer-dist || true
           fi
           if ! test -f vendor/aaemnnosttv/wp-sqlite-db/src/db.php; then
-            echo "[fallback] composer経由で見つからないためraw取得します"
+            echo "[fallback] raw fetch"
             mkdir -p vendor/aaemnnosttv/wp-sqlite-db/src
             curl -sSLo vendor/aaemnnosttv/wp-sqlite-db/src/db.php \
               https://raw.githubusercontent.com/aaemnnosttv/wp-sqlite-db/v1.3.2/src/db.php
@@ -67,10 +71,23 @@ jobs:
           mkdir -p tmp
           chmod -R 777 tmp
 
-      - name: PHPCS (if present)
+      # ★ PHPCSを高速化：対象を絞り、巨大ディレクトリは除外
+      - name: PHPCS (fast & scoped)
         run: |
           if [ -x vendor/bin/phpcs ]; then
-            vendor/bin/phpcs --standard=WordPress-Extra .
+            set -e
+            paths=""
+            for d in includes src lib app; do [ -d "$d" ] && paths="$paths $d"; done
+            [ -d tests ] && paths="$paths tests"
+            # 直下のPHPファイルも対象に（例：plugin.php など）
+            shopt -s nullglob; for f in *.php; do paths="$paths $f"; done
+            if [ -z "$paths" ]; then paths="."; fi
+            echo "PHPCS targets:$paths"
+            vendor/bin/phpcs \
+              --standard=WordPress-Extra \
+              --extensions=php \
+              --ignore=vendor/*,tests/wordpress/*,tmp/*,.git/*,.github/*,node_modules/* \
+              $paths
           else
             echo "phpcs not installed; skipping"
           fi
@@ -82,5 +99,6 @@ jobs:
           else
             echo "phpstan not installed; skipping"
           fi
+
       - name: PHPUnit
         run: vendor/bin/phpunit -c phpunit.xml.dist
