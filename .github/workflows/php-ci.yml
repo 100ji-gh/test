@@ -68,7 +68,6 @@ jobs:
           mkdir -p tmp
           chmod -R 777 tmp
 
-      # ▼ 追加：WP テスト用の必須定数を定義する設定ファイルを 3 か所に生成
       - name: Create wp-tests-config.php (multi-location)
         run: |
           set -e
@@ -98,15 +97,18 @@ jobs:
           write_cfg "$ROOT/tests/wp-tests-config.php"
           write_cfg "$ROOT/tests/phpunit/wp-tests-config.php"
 
-      # PHPCS：ソースのみに限定（巨大ディレクトリは除外）
+      # PHPCS：ソースのみ。ルート直下 *.php は find で wp-tests-config.php を確実に除外
       - name: PHPCS (scoped to source only)
         run: |
           if [ -x vendor/bin/phpcs ]; then
             set -e
             paths=""
             for d in includes src lib app; do [ -d "$d" ] && paths="$paths $d"; done
-            shopt -s nullglob; for f in *.php; do paths="$paths $f"; done
-            if [ -z "$paths" ]; then echo "No PHP sources to sniff; skipping"; exit 0; fi
+            # ルート直下の *.php を収集（wp-tests-config.php は除外）
+            root_files=$(find . -maxdepth 1 -type f -name '*.php' ! -name 'wp-tests-config.php' -printf '%P\n' | xargs -r echo)
+            paths="$paths $root_files"
+            # 何もなければスキップ
+            if [ -z "$(echo $paths | tr -d ' ')" ]; then echo "No PHP sources to sniff; skipping"; exit 0; fi
             echo "PHPCS targets:$paths"
             vendor/bin/phpcs \
               --standard=WordPress-Extra \
@@ -118,7 +120,6 @@ jobs:
             echo "phpcs not installed; skipping"
           fi
 
-      # PHPStan：あなたのソースだけ解析（CI 用ミニ設定）
       - name: PHPStan (scoped & CI config)
         run: |
           if [ -x vendor/bin/phpstan ]; then
@@ -141,8 +142,9 @@ jobs:
             } > phpstan-ci.neon
             paths=""
             for d in includes src lib app; do [ -d "$d" ] && paths="$paths $d"; done
-            shopt -s nullglob; for f in *.php; do paths="$paths $f"; done
-            if [ -z "$paths" ]; then echo "No PHP sources to analyse; skipping"; exit 0; fi
+            root_files=$(find . -maxdepth 1 -type f -name '*.php' ! -name 'wp-tests-config.php' -printf '%P\n' | xargs -r echo)
+            paths="$paths $root_files"
+            if [ -z "$(echo $paths | tr -d ' ')" ]; then echo "No PHP sources to analyse; skipping"; exit 0; fi
             echo "PHPStan targets:$paths"
             vendor/bin/phpstan analyse --no-progress --configuration=phpstan-ci.neon $paths
           else
