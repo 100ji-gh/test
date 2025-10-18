@@ -118,6 +118,7 @@ jobs:
             echo "phpcs not installed; skipping"
           fi
 
+      # PHPStan：あなたのソースだけ解析（CI 用ミニ設定）
       - name: PHPStan (scoped & CI config)
         run: |
           if [ -x vendor/bin/phpstan ]; then
@@ -149,12 +150,38 @@ jobs:
             echo "phpstan not installed; skipping"
           fi
 
+      # ★ 追加：CI専用の PHPUnit ブートストラップを作成して先に定数を定義 → WPテスト起動
+      - name: Create CI bootstrap for PHPUnit
+        run: |
+          set -e
+          ROOT="$GITHUB_WORKSPACE"
+          TESTS_DIR="${ROOT}/vendor/wp-phpunit/wp-phpunit"
+          BOOT="${ROOT}/tests/phpunit/bootstrap.ci.php"
+          mkdir -p "$(dirname "$BOOT")"
+          cat > "$BOOT" <<'PHP'
+          <?php
+          // --- Define required WP test constants BEFORE loading any wp-phpunit files ---
+          if ( ! defined('WP_TESTS_DOMAIN') ) define('WP_TESTS_DOMAIN', 'example.org');
+          if ( ! defined('WP_TESTS_EMAIL') )  define('WP_TESTS_EMAIL',  'admin@example.org');
+          if ( ! defined('WP_TESTS_TITLE') )  define('WP_TESTS_TITLE',  'Test Site');
+          if ( ! defined('WP_PHP_BINARY') )   define('WP_PHP_BINARY',   'php');
+
+          // ABSPATH to composer-installed WordPress (johnpbloch/wordpress-core)
+          $root = getenv('GITHUB_WORKSPACE') ?: dirname(__DIR__, 2);
+          $wp   = $root . '/wordpress/';
+          if ( ! defined('ABSPATH') ) define('ABSPATH', $wp);
+
+          // Then load wp-phpunit's bootstrap
+          $tests_dir = rtrim(getenv('WP_PHPUNIT__DIR') ?: $root . '/vendor/wp-phpunit/wp-phpunit', '/');
+          require_once $tests_dir . '/includes/functions.php';
+          require $tests_dir . '/includes/bootstrap.php';
+          PHP
+          echo "wrote $BOOT"
+
       - name: PHPUnit
         env:
           WP_PHP_BINARY: php
+          WP_PHPUNIT__DIR: ${{ github.workspace }}/vendor/wp-phpunit/wp-phpunit
         run: |
           set -e
-          test -f "$GITHUB_WORKSPACE/wp-tests-config.php" || { echo "wp-tests-config.php missing"; exit 1; }
-          # ← ここがポイント：起動前に必ず設定を読み込ませる
-          php -d auto_prepend_file="$GITHUB_WORKSPACE/wp-tests-config.php" \
-            vendor/bin/phpunit -c phpunit.xml.dist
+          vendor/bin/phpunit --bootstrap tests/phpunit/bootstrap.ci.php -c phpunit.xml.dist
