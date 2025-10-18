@@ -81,7 +81,6 @@ jobs:
           rm -rf "$GITHUB_WORKSPACE/wordpress"
           ln -s "$TARGET" "$GITHUB_WORKSPACE/wordpress"
           echo "Symlinked wordpress -> $TARGET"
-          ls -la "$GITHUB_WORKSPACE/wordpress" || true
 
       - name: Ensure SQLite driver (composer or fallback) and place drop-in
         run: |
@@ -97,7 +96,6 @@ jobs:
           test -f vendor/aaemnnosttv/wp-sqlite-db/src/db.php || { echo "db.php still missing"; exit 1; }
           mkdir -p "$GITHUB_WORKSPACE/wordpress/wp-content"
           cp -f vendor/aaemnnosttv/wp-sqlite-db/src/db.php "$GITHUB_WORKSPACE/wordpress/wp-content/db.php"
-          echo "Drop-in placed at ./wordpress/wp-content/db.php"
 
       - name: Prepare temp dirs
         run: |
@@ -157,7 +155,7 @@ jobs:
             echo "phpcs not installed; skipping"
           fi
 
-      # --- PHPStan最小WPスタブ（$ をエスケープ & callable 指定） ---
+      # ---- 修正: PHPStan用の最小WPスタブ（型を厳密化） ----
       - name: Generate minimal WP stubs for PHPStan
         run: |
           set -e
@@ -170,7 +168,8 @@ jobs:
             echo "  function add_action(string \$hook_name, callable \$callback, int \$priority = 10, int \$accepted_args = 1) : bool {}"
             echo "}"
             echo "if (!function_exists('apply_filters')) {"
-            echo "  function apply_filters(string \$hook_name, \$value, ...\$args) { return \$value; }"
+            echo "  /** @param mixed \$value @param mixed ...\$args @return mixed */"
+            echo "  function apply_filters(string \$hook_name, mixed \$value, mixed ...\$args): mixed { return \$value; }"
             echo "}"
             echo "if (!function_exists('is_user_logged_in')) {"
             echo "  function is_user_logged_in() : bool {}"
