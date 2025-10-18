@@ -81,10 +81,10 @@ jobs:
           mkdir -p tmp
           chmod -R 777 tmp
 
-                - name: Ensure WordPress core (johnpbloch) is present
+      # ▼ 追加：WPコアが無ければCI内で導入
+      - name: Ensure WordPress core (johnpbloch) is present
         run: |
           set -e
-          # 既にあるか探す
           FOUND=0
           for p in \
             "$GITHUB_WORKSPACE/wordpress/wp-settings.php" \
@@ -97,14 +97,10 @@ jobs:
               break
             fi
           done
-
-          # なければ Composer で導入（CI上だけの一時導入でOK）
           if [ "$FOUND" -eq 0 ]; then
             echo "Installing WordPress core via composer..."
             composer require johnpbloch/wordpress-core:^6.8 johnpbloch/wordpress:^6.8 --no-interaction --prefer-dist || true
           fi
-
-          # 導入後の確認（まだ無いなら失敗で止める）
           for p in \
             "$GITHUB_WORKSPACE/wordpress/wp-settings.php" \
             "$GITHUB_WORKSPACE/vendor/johnpbloch/wordpress-core/wordpress/wp-settings.php" \
@@ -115,11 +111,9 @@ jobs:
               exit 0
             fi
           done
-
           echo "WordPress core still missing after composer require."
           ls -la "$GITHUB_WORKSPACE/vendor/johnpbloch" || true
           exit 1
-
 
       - name: Create wp-tests-config.php (auto-detect ABSPATH)
         run: |
@@ -190,47 +184,4 @@ jobs:
               echo '  level: 6'
               echo '  treatPhpDocTypesAsCertain: false'
               echo '  checkMissingIterableValueType: false'
-              echo '  paths: []'
-              echo '  excludePaths:'
-              echo '    analyse:'
-              echo '      - vendor/*'
-              echo '      - tests/*'
-              echo '      - tests/wordpress/*'
-              echo '      - tmp/*'
-              echo '      - .github/*'
-              echo '      - wp-content/*'
-              echo '      - node_modules/*'
-            } > phpstan-ci.neon
-            paths=""
-            for d in includes src lib app; do [ -d "$d" ] && paths="$paths $d"; done
-            root_files=$(find . -maxdepth 1 -type f -name '*.php' ! -name 'wp-tests-config.php' ! -name 'ci-prepend.php' -printf '%P\n' | xargs -r echo)
-            paths="$paths $root_files"
-            if [ -z "$(echo "$paths" | tr -d ' ')" ]; then echo "No PHP sources to analyse; skipping"; exit 0; fi
-            echo "PHPStan targets:$paths"
-            vendor/bin/phpstan analyse --no-progress --configuration=phpstan-ci.neon $paths
-          else
-            echo "phpstan not installed; skipping"
-          fi
-
-      - name: Create CI prepend (defines only)
-        run: |
-          set -e
-          {
-            echo "<?php"
-            echo "if (!defined('WP_TESTS_DOMAIN')) define('WP_TESTS_DOMAIN', 'example.org');"
-            echo "if (!defined('WP_TESTS_EMAIL'))  define('WP_TESTS_EMAIL',  'admin@example.org');"
-            echo "if (!defined('WP_TESTS_TITLE'))  define('WP_TESTS_TITLE',  'Test Site');"
-            echo "if (!defined('WP_PHP_BINARY'))   define('WP_PHP_BINARY',   'php');"
-          } > "$GITHUB_WORKSPACE/ci-prepend.php"
-          echo "wrote $GITHUB_WORKSPACE/ci-prepend.php"
-
-      - name: PHPUnit
-        env:
-          WP_PHP_BINARY: php
-          WP_PHPUNIT__DIR: ${{ github.workspace }}/vendor/wp-phpunit/wp-phpunit
-          WP_PHPUNIT__TESTS_CONFIG: ${{ github.workspace }}/wp-tests-config.php
-        run: |
-          set -e
-          test -f "$GITHUB_WORKSPACE/wp-tests-config.php" || { echo "wp-tests-config.php missing"; exit 1; }
-          test -f "$GITHUB_WORKSPACE/ci-prepend.php" || { echo "ci-prepend.php missing"; exit 1; }
-          php -d auto_prepend_file="$GITHUB_WORKSPACE/ci-prepend.php" vendor/bin/phpunit -c phpunit.xml.dist
+              echo '  path
