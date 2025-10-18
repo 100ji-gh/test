@@ -75,7 +75,9 @@ jobs:
 
       - name: Prepare temp dirs
         run: |
+          set -e
           mkdir -p tmp
+          mkdir -p tmp/sqlite-db
           chmod -R 777 tmp
 
       - name: Ensure WordPress core (johnpbloch) is present
@@ -220,6 +222,9 @@ jobs:
             echo "if (!defined('WP_TESTS_EMAIL'))  define('WP_TESTS_EMAIL',  'admin@example.org');"
             echo "if (!defined('WP_TESTS_TITLE'))  define('WP_TESTS_TITLE',  'Test Site');"
             echo "if (!defined('WP_PHP_BINARY'))   define('WP_PHP_BINARY',   'php');"
+            # SQLite の DB 保存先を強制（書込可の tmp/sqlite-db/ を使用）
+            echo "if (!defined('DB_DIR'))  define('DB_DIR', getenv('GITHUB_WORKSPACE').'/tmp/sqlite-db/');"
+            echo "if (!defined('DB_FILE')) define('DB_FILE', 'wptests.sqlite');"
           } > "$GITHUB_WORKSPACE/ci-prepend.php"
           echo "wrote $GITHUB_WORKSPACE/ci-prepend.php"
 
@@ -232,4 +237,5 @@ jobs:
           set -e
           test -f "$GITHUB_WORKSPACE/wp-tests-config.php" || { echo "wp-tests-config.php missing"; exit 1; }
           test -f "$GITHUB_WORKSPACE/ci-prepend.php" || { echo "ci-prepend.php missing"; exit 1; }
+          # 先頭で DB_DIR/DB_FILE を定義してから WordPress をロードさせる
           php -d auto_prepend_file="$GITHUB_WORKSPACE/ci-prepend.php" vendor/bin/phpunit -c phpunit.xml.dist
