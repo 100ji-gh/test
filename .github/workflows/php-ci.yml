@@ -20,7 +20,7 @@ jobs:
           php-version: '8.2'
           tools: composer:v2
           coverage: none
-          extensions: mbstring, intl, zip, dom, curl, json, sqlite3
+          extensions: mbstring, intl, zip, dom, curl, sqlite3
 
       - name: Configure Composer allow-plugins
         run: |
@@ -154,7 +154,10 @@ jobs:
             set -e
             paths=""
             for d in includes src lib app; do [ -d "$d" ] && paths="$paths $d"; done
-            root_files=$(find . -maxdepth 1 -type f -name '*.php' ! -name 'wp-tests-config.php' ! -name 'ci-prepend.php' -printf '%P\n' | xargs -r echo)
+            root_files=$(find . -maxdepth 1 -type f -name '*.php' \
+              ! -name 'wp-tests-config.php' \
+              ! -name 'ci-prepend.php' \
+              -printf '%P\n' | xargs -r echo)
             paths="$paths $root_files"
             if [ -z "$(echo "$paths" | tr -d ' ')" ]; then echo "No PHP sources to sniff; skipping"; exit 0; fi
             echo "PHPCS targets:$paths"
@@ -172,30 +175,36 @@ jobs:
         run: |
           if [ -x vendor/bin/phpstan ]; then
             set -e
-            cat > phpstan-ci.neon <<'EOF'
-parameters:
-  level: 6
-  treatPhpDocTypesAsCertain: false
-  checkMissingIterableValueType: false
-  paths: []
-  excludePaths:
-    analyse:
-      - vendor/*
-      - tests/*
-      - tests/wordpress/*
-      - tmp/*
-      - .github/*
-      - wp-content/*
-      - node_modules/*
-EOF
+            {
+              echo "parameters:"
+              echo "  level: 6"
+              echo "  treatPhpDocTypesAsCertain: false"
+              echo "  checkMissingIterableValueType: false"
+              echo "  paths: []"
+              echo "  excludePaths:"
+              echo "    analyse:"
+              echo "      - vendor/*"
+              echo "      - tests/*"
+              echo "      - tests/wordpress/*"
+              echo "      - tmp/*"
+              echo "      - .github/*"
+              echo "      - wp-content/*"
+              echo "      - node_modules/*"
+            } > phpstan-ci.neon
+
             paths=""
             for d in includes src lib app; do [ -d "$d" ] && paths="$paths $d"; done
-            root_files=$(find . -maxdepth 1 -type f -name '*.php' ! -name 'wp-tests-config.php' ! -name 'ci-prepend.php' -printf '%P\n' | xargs -r echo)
+            root_files=$(find . -maxdepth 1 -type f -name '*.php' \
+              ! -name 'wp-tests-config.php' \
+              ! -name 'ci-prepend.php' \
+              -printf '%P\n' | xargs -r echo)
             paths="$paths $root_files"
+
             if [ -z "$(echo "$paths" | tr -d ' ')" ]; then
               echo "No PHP sources to analyse; skipping"
               exit 0
             fi
+
             echo "PHPStan targets:$paths"
             vendor/bin/phpstan analyse --no-progress --configuration=phpstan-ci.neon $paths
           else
