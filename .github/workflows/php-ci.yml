@@ -97,17 +97,15 @@ jobs:
           write_cfg "$ROOT/tests/wp-tests-config.php"
           write_cfg "$ROOT/tests/phpunit/wp-tests-config.php"
 
-      # PHPCS：ソースのみ。ルート直下 *.php は find で wp-tests-config.php を確実に除外
+      # PHPCS：ソースのみ。ルート直下 *.php から wp-tests-config.php を除外
       - name: PHPCS (scoped to source only)
         run: |
           if [ -x vendor/bin/phpcs ]; then
             set -e
             paths=""
             for d in includes src lib app; do [ -d "$d" ] && paths="$paths $d"; done
-            # ルート直下の *.php を収集（wp-tests-config.php は除外）
             root_files=$(find . -maxdepth 1 -type f -name '*.php' ! -name 'wp-tests-config.php' -printf '%P\n' | xargs -r echo)
             paths="$paths $root_files"
-            # 何もなければスキップ
             if [ -z "$(echo $paths | tr -d ' ')" ]; then echo "No PHP sources to sniff; skipping"; exit 0; fi
             echo "PHPCS targets:$paths"
             vendor/bin/phpcs \
@@ -154,4 +152,9 @@ jobs:
       - name: PHPUnit
         env:
           WP_PHP_BINARY: php
-        run: vendor/bin/phpunit -c phpunit.xml.dist
+        run: |
+          set -e
+          test -f "$GITHUB_WORKSPACE/wp-tests-config.php" || { echo "wp-tests-config.php missing"; exit 1; }
+          # ← ここがポイント：起動前に必ず設定を読み込ませる
+          php -d auto_prepend_file="$GITHUB_WORKSPACE/wp-tests-config.php" \
+            vendor/bin/phpunit -c phpunit.xml.dist
