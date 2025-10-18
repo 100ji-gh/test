@@ -155,7 +155,7 @@ jobs:
             echo "phpcs not installed; skipping"
           fi
 
-      # ---- PHPStan用の最小WPスタブを作成 ----
+      # ---- PHPStan用の最小WPスタブ ----
       - name: Generate minimal WP stubs for PHPStan
         run: |
           set -e
@@ -177,7 +177,6 @@ jobs:
           } > "$GITHUB_WORKSPACE/.phpstan-wp-min-stubs.php"
           echo "wrote .phpstan-wp-min-stubs.php"
 
-      # ---- PHPStan（スタブを絶対パスで stubFiles + bootstrapFiles に指定） ----
       - name: PHPStan (scoped & CI config)
         run: |
           if [ -x vendor/bin/phpstan ]; then
@@ -207,7 +206,6 @@ jobs:
 
             paths=""
             for d in includes src lib app; do [ -d "$d" ] && paths="$paths $d"; done
-            # ルート直下の .phpstan-wp-min-stubs.php は解析対象から除外
             root_files=$(find . -maxdepth 1 -type f -name '*.php' \
               ! -name 'wp-tests-config.php' \
               ! -name 'ci-prepend.php' \
@@ -239,6 +237,31 @@ jobs:
             echo "if (!defined('DB_FILE')) define('DB_FILE', 'wptests.sqlite');"
           } > "$GITHUB_WORKSPACE/ci-prepend.php"
           echo "wrote $GITHUB_WORKSPACE/ci-prepend.php"
+
+      # ---- ここで bootstrap.php を自動生成（無ければ作る）----
+      - name: Ensure PHPUnit bootstrap (WordPress)
+        run: |
+          set -e
+          mkdir -p tests/phpunit
+          if [ ! -f tests/phpunit/bootstrap.php ]; then
+            ROOT="$GITHUB_WORKSPACE"
+            {
+              echo "<?php"
+              echo "\$_tests_dir = getenv('WP_PHPUNIT__DIR');"
+              echo "if (!\$_tests_dir || !file_exists(\$_tests_dir.'/includes/bootstrap.php')) {"
+              echo "  fwrite(STDERR, 'WP_PHPUNIT__DIR invalid' . PHP_EOL);"
+              echo "  exit(1);"
+              echo "}"
+              echo "require \$_tests_dir.'/includes/functions.php';"
+              echo "tests_add_filter('muplugins_loaded', function () {"
+              echo "  require_once '$ROOT/test-plugin.php';"
+              echo "});"
+              echo "require \$_tests_dir.'/includes/bootstrap.php';"
+            } > tests/phpunit/bootstrap.php
+            echo "wrote tests/phpunit/bootstrap.php"
+          else
+            echo "tests/phpunit/bootstrap.php exists; keeping as-is"
+          fi
 
       - name: Sanity check (paths & extensions)
         run: |
