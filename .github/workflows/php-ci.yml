@@ -9,9 +9,6 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        php: [ '8.2' ]
 
     steps:
       - name: Checkout
@@ -20,7 +17,7 @@ jobs:
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
-          php-version: ${{ matrix.php }}
+          php-version: '8.2'
           tools: composer:v2
           coverage: none
           extensions: mbstring, intl, zip, dom, curl, json, sqlite3
@@ -81,7 +78,6 @@ jobs:
           mkdir -p tmp
           chmod -R 777 tmp
 
-      # ▼ 追加：WPコアが無ければCI内で導入
       - name: Ensure WordPress core (johnpbloch) is present
         run: |
           set -e
@@ -106,10 +102,7 @@ jobs:
             "$GITHUB_WORKSPACE/vendor/johnpbloch/wordpress-core/wordpress/wp-settings.php" \
             "$GITHUB_WORKSPACE/vendor/johnpbloch/wordpress/wp-settings.php"
           do
-            if [ -f "$p" ]; then
-              echo "WP core ready at: $p"
-              exit 0
-            fi
+            [ -f "$p" ] && { echo "WP core ready at: $p"; exit 0; }
           done
           echo "WordPress core still missing after composer require."
           ls -la "$GITHUB_WORKSPACE/vendor/johnpbloch" || true
@@ -175,12 +168,11 @@ jobs:
             echo "phpcs not installed; skipping"
           fi
 
-            - name: PHPStan (scoped & CI config)
+      - name: PHPStan (scoped & CI config)
         run: |
           if [ -x vendor/bin/phpstan ]; then
             set -e
-            # CI 専用の最小設定をファイルで用意（ベンダ/テスト/wordpress 等は除外）
-            cat > phpstan-ci.neon <<EOF
+            cat > phpstan-ci.neon <<'EOF'
 parameters:
   level: 6
   treatPhpDocTypesAsCertain: false
@@ -196,24 +188,39 @@ parameters:
       - wp-content/*
       - node_modules/*
 EOF
-
-            # 解析対象はあなたのソースのみ（includes/src/lib/app と 直下 *.php ）
             paths=""
             for d in includes src lib app; do [ -d "$d" ] && paths="$paths $d"; done
-            root_files=$(find . -maxdepth 1 -type f -name '*.php' \
-              ! -name 'wp-tests-config.php' \
-              ! -name 'ci-prepend.php' \
-              -printf '%P\n' | xargs -r echo)
+            root_files=$(find . -maxdepth 1 -type f -name '*.php' ! -name 'wp-tests-config.php' ! -name 'ci-prepend.php' -printf '%P\n' | xargs -r echo)
             paths="$paths $root_files"
-
             if [ -z "$(echo "$paths" | tr -d ' ')" ]; then
               echo "No PHP sources to analyse; skipping"
               exit 0
             fi
-
             echo "PHPStan targets:$paths"
             vendor/bin/phpstan analyse --no-progress --configuration=phpstan-ci.neon $paths
           else
             echo "phpstan not installed; skipping"
           fi
 
+      - name: Create CI prepend (defines only)
+        run: |
+          set -e
+          {
+            echo "<?php"
+            echo "if (!defined('WP_TESTS_DOMAIN')) define('WP_TESTS_DOMAIN', 'example.org');"
+            echo "if (!defined('WP_TESTS_EMAIL'))  define('WP_TESTS_EMAIL',  'admin@example.org');"
+            echo "if (!defined('WP_TESTS_TITLE'))  define('WP_TESTS_TITLE',  'Test Site');"
+            echo "if (!defined('WP_PHP_BINARY'))   define('WP_PHP_BINARY',   'php');"
+          } > "$GITHUB_WORKSPACE/ci-prepend.php"
+          echo "wrote $GITHUB_WORKSPACE/ci-prepend.php"
+
+      - name: PHPUnit
+        env:
+          WP_PHP_BINARY: php
+          WP_PHPUNIT__DIR: ${{ github.workspace }}/vendor/wp-phpunit/wp-phpunit
+          WP_PHPUNIT__TESTS_CONFIG: ${{ github.workspace }}/wp-tests-config.php
+        run: |
+          set -e
+          test -f "$GITHUB_WORKSPACE/wp-tests-config.php" || { echo "wp-tests-config.php missing"; exit 1; }
+          test -f "$GITHUB_WORKSPACE/ci-prepend.php" || { echo "ci-prepend.php missing"; exit 1; }
+          php -d auto_prepend_file="$GITHUB_WORKSPACE/ci-prepend.php" vendor/bin/phpunit -c phpunit.xml.dist
