@@ -175,13 +175,45 @@ jobs:
             echo "phpcs not installed; skipping"
           fi
 
-      - name: PHPStan (scoped & CI config)
+            - name: PHPStan (scoped & CI config)
         run: |
           if [ -x vendor/bin/phpstan ]; then
             set -e
-            {
-              echo 'parameters:'
-              echo '  level: 6'
-              echo '  treatPhpDocTypesAsCertain: false'
-              echo '  checkMissingIterableValueType: false'
-              echo '  path
+            # CI 専用の最小設定をファイルで用意（ベンダ/テスト/wordpress 等は除外）
+            cat > phpstan-ci.neon <<EOF
+parameters:
+  level: 6
+  treatPhpDocTypesAsCertain: false
+  checkMissingIterableValueType: false
+  paths: []
+  excludePaths:
+    analyse:
+      - vendor/*
+      - tests/*
+      - tests/wordpress/*
+      - tmp/*
+      - .github/*
+      - wp-content/*
+      - node_modules/*
+EOF
+
+            # 解析対象はあなたのソースのみ（includes/src/lib/app と 直下 *.php ）
+            paths=""
+            for d in includes src lib app; do [ -d "$d" ] && paths="$paths $d"; done
+            root_files=$(find . -maxdepth 1 -type f -name '*.php' \
+              ! -name 'wp-tests-config.php' \
+              ! -name 'ci-prepend.php' \
+              -printf '%P\n' | xargs -r echo)
+            paths="$paths $root_files"
+
+            if [ -z "$(echo "$paths" | tr -d ' ')" ]; then
+              echo "No PHP sources to analyse; skipping"
+              exit 0
+            fi
+
+            echo "PHPStan targets:$paths"
+            vendor/bin/phpstan analyse --no-progress --configuration=phpstan-ci.neon $paths
+          else
+            echo "phpstan not installed; skipping"
+          fi
+
