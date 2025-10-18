@@ -17,4 +17,4 @@ function tpg_hide_for_guests_filter( $content ) {
 	}
 	return '<div class="notice">Please log in to view this content.</div>';
 }
-add_filter( 'the_content', 'tpg_hide_for_guests_filter', 5 );
+\add_filter( 'the_content', 'tpg_hide_for_guests_filter', 5 );
