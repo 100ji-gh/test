@@ -81,6 +81,46 @@ jobs:
           mkdir -p tmp
           chmod -R 777 tmp
 
+                - name: Ensure WordPress core (johnpbloch) is present
+        run: |
+          set -e
+          # 既にあるか探す
+          FOUND=0
+          for p in \
+            "$GITHUB_WORKSPACE/wordpress/wp-settings.php" \
+            "$GITHUB_WORKSPACE/vendor/johnpbloch/wordpress-core/wordpress/wp-settings.php" \
+            "$GITHUB_WORKSPACE/vendor/johnpbloch/wordpress/wp-settings.php"
+          do
+            if [ -f "$p" ]; then
+              echo "Found WP core: $p"
+              FOUND=1
+              break
+            fi
+          done
+
+          # なければ Composer で導入（CI上だけの一時導入でOK）
+          if [ "$FOUND" -eq 0 ]; then
+            echo "Installing WordPress core via composer..."
+            composer require johnpbloch/wordpress-core:^6.8 johnpbloch/wordpress:^6.8 --no-interaction --prefer-dist || true
+          fi
+
+          # 導入後の確認（まだ無いなら失敗で止める）
+          for p in \
+            "$GITHUB_WORKSPACE/wordpress/wp-settings.php" \
+            "$GITHUB_WORKSPACE/vendor/johnpbloch/wordpress-core/wordpress/wp-settings.php" \
+            "$GITHUB_WORKSPACE/vendor/johnpbloch/wordpress/wp-settings.php"
+          do
+            if [ -f "$p" ]; then
+              echo "WP core ready at: $p"
+              exit 0
+            fi
+          done
+
+          echo "WordPress core still missing after composer require."
+          ls -la "$GITHUB_WORKSPACE/vendor/johnpbloch" || true
+          exit 1
+
+
       - name: Create wp-tests-config.php (auto-detect ABSPATH)
         run: |
           set -e
