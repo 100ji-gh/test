@@ -46,6 +46,7 @@ jobs:
       - name: Ensure WPCS standard
         run: composer require wp-coding-standards/wpcs:^3 --no-interaction --prefer-dist || true
 
+      # SQLite ドロップインを用意
       - name: Ensure SQLite driver (composer or fallback)
         run: |
           set -e
@@ -60,44 +61,74 @@ jobs:
           fi
           test -f vendor/aaemnnosttv/wp-sqlite-db/src/db.php || (echo "db.php still missing"; exit 1)
 
-      - name: Prepare WP tests (SQLite)
+      # 主要候補すべてに db.php を配置（どの ABSPATH でも拾えるように）
+      - name: Place SQLite drop-in to possible wp-content dirs
         run: |
           set -e
-          mkdir -p tests/wordpress/wp-content
-          cp vendor/aaemnnosttv/wp-sqlite-db/src/db.php tests/wordpress/wp-content/db.php
+          SRC="vendor/aaemnnosttv/wp-sqlite-db/src/db.php"
+          for dest in \
+            "$GITHUB_WORKSPACE/wordpress/wp-content" \
+            "$GITHUB_WORKSPACE/wp/wp-content" \
+            "$GITHUB_WORKSPACE/vendor/johnpbloch/wordpress-core/wordpress/wp-content" \
+            "$GITHUB_WORKSPACE/vendor/johnpbloch/wordpress/wp-content" \
+            "$GITHUB_WORKSPACE/tests/wordpress/wp-content"
+          do
+            mkdir -p "$dest"
+            cp "$SRC" "$dest/db.php" || true
+          done
+
+      - name: Prepare temp dirs
+        run: |
           mkdir -p tmp
           chmod -R 777 tmp
 
-      - name: Create wp-tests-config.php (multi-location)
+      # WP テスト用設定：WPコアの場所を自動検出して ABSPATH を決定（定数は ifndef で定義）
+      - name: Create wp-tests-config.php (auto-detect ABSPATH)
         run: |
           set -e
           ROOT="$GITHUB_WORKSPACE"
-          WP="$ROOT/wordpress"
           write_cfg() {
             path="$1"
             mkdir -p "$(dirname "$path")"
-            printf "%s\n" \
-              "<?php" \
-              "define( 'WP_TESTS_DOMAIN', 'example.org' );" \
-              "define( 'WP_TESTS_EMAIL',  'admin@example.org' );" \
-              "define( 'WP_TESTS_TITLE',  'Test Site' );" \
-              "define( 'WP_PHP_BINARY',   'php' );" \
-              "define( 'DB_NAME',     'wptests' );" \
-              "define( 'DB_USER',     'root' );" \
-              "define( 'DB_PASSWORD', '' );" \
-              "define( 'DB_HOST',     'localhost' );" \
-              "define( 'DB_CHARSET',  'utf8' );" \
-              "define( 'DB_COLLATE',  '' );" \
-              "\$table_prefix = 'wptests_';" \
-              "define( 'ABSPATH', '${WP}/' );" \
-              > "$path"
+            cat > "$path" <<'PHP'
+<?php
+$root = getenv('GITHUB_WORKSPACE') ?: __DIR__;
+$paths = [
+  $root . '/wordpress/',
+  $root . '/wp/',
+  $root . '/vendor/johnpbloch/wordpress-core/wordpress/',
+  $root . '/vendor/johnpbloch/wordpress/',
+];
+$found = null;
+foreach ($paths as $p) {
+  if (file_exists($p . 'wp-settings.php')) { $found = $p; break; }
+}
+if (!$found) { fwrite(STDERR, "[wp-tests-config] Could not locate WordPress core.\n"); exit(1); }
+
+if (!defined('ABSPATH'))        define('ABSPATH', $found);
+if (!defined('WP_CONTENT_DIR')) define('WP_CONTENT_DIR', ABSPATH . 'wp-content');
+
+if (!defined('WP_TESTS_DOMAIN')) define('WP_TESTS_DOMAIN', 'example.org');
+if (!defined('WP_TESTS_EMAIL'))  define('WP_TESTS_EMAIL',  'admin@example.org');
+if (!defined('WP_TESTS_TITLE'))  define('WP_TESTS_TITLE',  'Test Site');
+if (!defined('WP_PHP_BINARY'))   define('WP_PHP_BINARY',   'php');
+
+define('DB_NAME',     'wptests');
+define('DB_USER',     'root');
+define('DB_PASSWORD', '');
+define('DB_HOST',     'localhost');
+define('DB_CHARSET',  'utf8');
+define('DB_COLLATE',  '');
+
+$table_prefix = 'wptests_';
+PHP
             echo "wrote $path"
           }
           write_cfg "$ROOT/wp-tests-config.php"
           write_cfg "$ROOT/tests/wp-tests-config.php"
           write_cfg "$ROOT/tests/phpunit/wp-tests-config.php"
 
-      # PHPCS：ソースのみ。ルート直下 *.php から wp-tests-config.php を除外
+      # PHPCS：ソースのみ（設定・vendor等は除外）
       - name: PHPCS (scoped to source only)
         run: |
           if [ -x vendor/bin/phpcs ]; then
@@ -156,29 +187,27 @@ jobs:
             echo "phpstan not installed; skipping"
           fi
 
-      # ★ 追加：定数だけを最小定義する auto_prepend 用ファイルを生成（どこより先に読む）
+      # を安全に：定数だけを最速で定義（二重定義は ifndef で回避）
       - name: Create CI prepend (defines only)
         run: |
           set -e
           cat > "$GITHUB_WORKSPACE/ci-prepend.php" <<'PHP'
-          <?php
-          if (!defined('WP_TESTS_DOMAIN')) define('WP_TESTS_DOMAIN', 'example.org');
-          if (!defined('WP_TESTS_EMAIL'))  define('WP_TESTS_EMAIL',  'admin@example.org');
-          if (!defined('WP_TESTS_TITLE'))  define('WP_TESTS_TITLE',  'Test Site');
-          if (!defined('WP_PHP_BINARY'))   define('WP_PHP_BINARY',   'php');
-          PHP
+<?php
+if (!defined('WP_TESTS_DOMAIN')) define('WP_TESTS_DOMAIN', 'example.org');
+if (!defined('WP_TESTS_EMAIL'))  define('WP_TESTS_EMAIL',  'admin@example.org');
+if (!defined('WP_TESTS_TITLE'))  define('WP_TESTS_TITLE',  'Test Site');
+if (!defined('WP_PHP_BINARY'))   define('WP_PHP_BINARY',   'php');
+PHP
           echo "wrote $GITHUB_WORKSPACE/ci-prepend.php"
 
       - name: PHPUnit
         env:
           WP_PHP_BINARY: php
-          # ← 公式ブートストラップがこのパスから wp-tests-config.php を読みます
           WP_PHPUNIT__DIR: ${{ github.workspace }}/vendor/wp-phpunit/wp-phpunit
           WP_PHPUNIT__TESTS_CONFIG: ${{ github.workspace }}/wp-tests-config.php
         run: |
           set -e
           test -f "$GITHUB_WORKSPACE/wp-tests-config.php" || { echo "wp-tests-config.php missing"; exit 1; }
           test -f "$GITHUB_WORKSPACE/ci-prepend.php" || { echo "ci-prepend.php missing"; exit 1; }
-          # 先頭で定数を定義（wp-phpunit が何を先に読んでも安全）
           php -d auto_prepend_file="$GITHUB_WORKSPACE/ci-prepend.php" \
             vendor/bin/phpunit -c phpunit.xml.dist
