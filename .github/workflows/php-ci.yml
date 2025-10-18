@@ -104,7 +104,10 @@ jobs:
             set -e
             paths=""
             for d in includes src lib app; do [ -d "$d" ] && paths="$paths $d"; done
-            root_files=$(find . -maxdepth 1 -type f -name '*.php' ! -name 'wp-tests-config.php' -printf '%P\n' | xargs -r echo)
+            root_files=$(find . -maxdepth 1 -type f -name '*.php' \
+              ! -name 'wp-tests-config.php' \
+              ! -name 'ci-prepend.php' \
+              -printf '%P\n' | xargs -r echo)
             paths="$paths $root_files"
             if [ -z "$(echo $paths | tr -d ' ')" ]; then echo "No PHP sources to sniff; skipping"; exit 0; fi
             echo "PHPCS targets:$paths"
@@ -141,7 +144,10 @@ jobs:
             } > phpstan-ci.neon
             paths=""
             for d in includes src lib app; do [ -d "$d" ] && paths="$paths $d"; done
-            root_files=$(find . -maxdepth 1 -type f -name '*.php' ! -name 'wp-tests-config.php' -printf '%P\n' | xargs -r echo)
+            root_files=$(find . -maxdepth 1 -type f -name '*.php' \
+              ! -name 'wp-tests-config.php' \
+              ! -name 'ci-prepend.php' \
+              -printf '%P\n' | xargs -r echo)
             paths="$paths $root_files"
             if [ -z "$(echo $paths | tr -d ' ')" ]; then echo "No PHP sources to analyse; skipping"; exit 0; fi
             echo "PHPStan targets:$paths"
@@ -150,38 +156,29 @@ jobs:
             echo "phpstan not installed; skipping"
           fi
 
-      # ★ 追加：CI専用の PHPUnit ブートストラップを作成して先に定数を定義 → WPテスト起動
-      - name: Create CI bootstrap for PHPUnit
+      # ★ 追加：定数だけを最小定義する auto_prepend 用ファイルを生成（どこより先に読む）
+      - name: Create CI prepend (defines only)
         run: |
           set -e
-          ROOT="$GITHUB_WORKSPACE"
-          TESTS_DIR="${ROOT}/vendor/wp-phpunit/wp-phpunit"
-          BOOT="${ROOT}/tests/phpunit/bootstrap.ci.php"
-          mkdir -p "$(dirname "$BOOT")"
-          cat > "$BOOT" <<'PHP'
+          cat > "$GITHUB_WORKSPACE/ci-prepend.php" <<'PHP'
           <?php
-          // --- Define required WP test constants BEFORE loading any wp-phpunit files ---
-          if ( ! defined('WP_TESTS_DOMAIN') ) define('WP_TESTS_DOMAIN', 'example.org');
-          if ( ! defined('WP_TESTS_EMAIL') )  define('WP_TESTS_EMAIL',  'admin@example.org');
-          if ( ! defined('WP_TESTS_TITLE') )  define('WP_TESTS_TITLE',  'Test Site');
-          if ( ! defined('WP_PHP_BINARY') )   define('WP_PHP_BINARY',   'php');
-
-          // ABSPATH to composer-installed WordPress (johnpbloch/wordpress-core)
-          $root = getenv('GITHUB_WORKSPACE') ?: dirname(__DIR__, 2);
-          $wp   = $root . '/wordpress/';
-          if ( ! defined('ABSPATH') ) define('ABSPATH', $wp);
-
-          // Then load wp-phpunit's bootstrap
-          $tests_dir = rtrim(getenv('WP_PHPUNIT__DIR') ?: $root . '/vendor/wp-phpunit/wp-phpunit', '/');
-          require_once $tests_dir . '/includes/functions.php';
-          require $tests_dir . '/includes/bootstrap.php';
+          if (!defined('WP_TESTS_DOMAIN')) define('WP_TESTS_DOMAIN', 'example.org');
+          if (!defined('WP_TESTS_EMAIL'))  define('WP_TESTS_EMAIL',  'admin@example.org');
+          if (!defined('WP_TESTS_TITLE'))  define('WP_TESTS_TITLE',  'Test Site');
+          if (!defined('WP_PHP_BINARY'))   define('WP_PHP_BINARY',   'php');
           PHP
-          echo "wrote $BOOT"
+          echo "wrote $GITHUB_WORKSPACE/ci-prepend.php"
 
       - name: PHPUnit
         env:
           WP_PHP_BINARY: php
+          # ← 公式ブートストラップがこのパスから wp-tests-config.php を読みます
           WP_PHPUNIT__DIR: ${{ github.workspace }}/vendor/wp-phpunit/wp-phpunit
+          WP_PHPUNIT__TESTS_CONFIG: ${{ github.workspace }}/wp-tests-config.php
         run: |
           set -e
-          vendor/bin/phpunit --bootstrap tests/phpunit/bootstrap.ci.php -c phpunit.xml.dist
+          test -f "$GITHUB_WORKSPACE/wp-tests-config.php" || { echo "wp-tests-config.php missing"; exit 1; }
+          test -f "$GITHUB_WORKSPACE/ci-prepend.php" || { echo "ci-prepend.php missing"; exit 1; }
+          # 先頭で定数を定義（wp-phpunit が何を先に読んでも安全）
+          php -d auto_prepend_file="$GITHUB_WORKSPACE/ci-prepend.php" \
+            vendor/bin/phpunit -c phpunit.xml.dist
