@@ -161,12 +161,22 @@ jobs:
             echo "phpcs not installed; skipping"
           fi
 
-      # --- PHPStan用：WPスタブを導入 ---
-      - name: Install PHPStan WordPress stubs (dev)
+      # --- PHPStan最小WPスタブを生成（add_filter, is_user_logged_in 等） ---
+      - name: Generate minimal WP stubs for PHPStan
         run: |
-          composer require --dev php-stubs/wordpress-stubs:^6 php-stubs/wordpress-tests-stubs:^6 --no-interaction --prefer-dist || true
+          set -e
+          {
+            echo "<?php"
+            echo "if (!function_exists('add_filter')) {"
+            echo "  function add_filter(string $hook_name, $callback, int $priority = 10, int $accepted_args = 1) : bool {}"
+            echo "}"
+            echo "if (!function_exists('is_user_logged_in')) {"
+            echo "  function is_user_logged_in() : bool {}"
+            echo "}"
+          } > "$GITHUB_WORKSPACE/.phpstan-wp-min-stubs.php"
+          echo "wrote .phpstan-wp-min-stubs.php"
 
-      # --- PHPStan（WPスタブを stubFiles として読み込み） ---
+      # --- PHPStan（CI最小設定＋スタブを読み込み） ---
       - name: PHPStan (scoped & CI config)
         run: |
           if [ -x vendor/bin/phpstan ]; then
@@ -177,8 +187,7 @@ jobs:
               echo "  treatPhpDocTypesAsCertain: false"
               echo "  paths: []"
               echo "  stubFiles:"
-              echo "    - vendor/php-stubs/wordpress-stubs/wordpress-stubs.php"
-              echo "    - vendor/php-stubs/wordpress-tests-stubs/wordpress-tests-stubs.php"
+              echo "    - .phpstan-wp-min-stubs.php"
               echo "  excludePaths:"
               echo "    analyse:"
               echo "      - vendor/*"
