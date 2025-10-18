@@ -157,14 +157,20 @@ jobs:
             echo "phpcs not installed; skipping"
           fi
 
-      # 最小のWPスタブを生成（$ を必ずエスケープ）
+      # --- PHPStan最小WPスタブ（$ をエスケープ & callable 指定） ---
       - name: Generate minimal WP stubs for PHPStan
         run: |
           set -e
           {
             echo "<?php"
             echo "if (!function_exists('add_filter')) {"
-            echo "  function add_filter(string \$hook_name, \$callback, int \$priority = 10, int \$accepted_args = 1) : bool {}"
+            echo "  function add_filter(string \$hook_name, callable \$callback, int \$priority = 10, int \$accepted_args = 1) : bool {}"
+            echo "}"
+            echo "if (!function_exists('add_action')) {"
+            echo "  function add_action(string \$hook_name, callable \$callback, int \$priority = 10, int \$accepted_args = 1) : bool {}"
+            echo "}"
+            echo "if (!function_exists('apply_filters')) {"
+            echo "  function apply_filters(string \$hook_name, \$value, ...\$args) { return \$value; }"
             echo "}"
             echo "if (!function_exists('is_user_logged_in')) {"
             echo "  function is_user_logged_in() : bool {}"
@@ -199,6 +205,7 @@ jobs:
             root_files=$(find . -maxdepth 1 -type f -name '*.php' \
               ! -name 'wp-tests-config.php' \
               ! -name 'ci-prepend.php' \
+              ! -name '.phpstan-wp-min-stubs.php' \
               -printf '%P\n' | xargs -r echo)
             paths="$paths $root_files"
 
