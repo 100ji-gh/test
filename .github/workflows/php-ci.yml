@@ -45,7 +45,7 @@ jobs:
       - name: Ensure WPCS standard
         run: composer require wp-coding-standards/wpcs:^3 --no-interaction --prefer-dist || true
 
-      # 1) WPコアが無ければ導入
+      # --- WordPressコア確保 → ./wordpress に正規化（シンボリックリンク） ---
       - name: Ensure WordPress core (johnpbloch) is present
         run: |
           set -e
@@ -66,7 +66,6 @@ jobs:
             composer require johnpbloch/wordpress-core:^6.8 johnpbloch/wordpress:^6.8 --no-interaction --prefer-dist || true
           fi
 
-      # 2) ABSPATH を workspace/wordpress に正規化（存在する実体にリンク）
       - name: Normalize WordPress path (create ./wordpress symlink)
         run: |
           set -e
@@ -85,7 +84,7 @@ jobs:
           echo "Symlinked wordpress -> $TARGET"
           ls -la "$GITHUB_WORKSPACE/wordpress" || true
 
-      # 3) SQLite ドロップインを配置（正規化した ABSPATH の wp-content に必ず入れる）
+      # --- SQLite ドロップインを ABSPATH/wp-content に配置 ---
       - name: Ensure SQLite driver (composer or fallback) and place drop-in
         run: |
           set -e
@@ -101,7 +100,6 @@ jobs:
           mkdir -p "$GITHUB_WORKSPACE/wordpress/wp-content"
           cp -f vendor/aaemnnosttv/wp-sqlite-db/src/db.php "$GITHUB_WORKSPACE/wordpress/wp-content/db.php"
           echo "Drop-in placed at ./wordpress/wp-content/db.php"
-          ls -la "$GITHUB_WORKSPACE/wordpress/wp-content" || true
 
       - name: Prepare temp dirs
         run: |
@@ -109,7 +107,7 @@ jobs:
           mkdir -p tmp/sqlite-db
           chmod -R 777 tmp
 
-      # 4) wp-tests-config.php は ABSPATH=./wordpress を明示
+      # --- wp-tests-config.php（ABSPATH=./wordpress 固定） ---
       - name: Create wp-tests-config.php (fixed ABSPATH)
         run: |
           set -e
@@ -139,7 +137,7 @@ jobs:
           make_cfg "$ROOT/tests/wp-tests-config.php"
           make_cfg "$ROOT/tests/phpunit/wp-tests-config.php"
 
-      # 5) PHPCS（あなたのソースだけ）
+      # --- PHPCS（あなたのソースのみ） ---
       - name: PHPCS (scoped to source only)
         run: |
           if [ -x vendor/bin/phpcs ]; then
@@ -163,7 +161,12 @@ jobs:
             echo "phpcs not installed; skipping"
           fi
 
-      # 6) PHPStan（CI最小設定）
+      # --- PHPStan用：WPスタブを導入 ---
+      - name: Install PHPStan WordPress stubs (dev)
+        run: |
+          composer require --dev php-stubs/wordpress-stubs:^6 php-stubs/wordpress-tests-stubs:^6 --no-interaction --prefer-dist || true
+
+      # --- PHPStan（WPスタブを stubFiles として読み込み） ---
       - name: PHPStan (scoped & CI config)
         run: |
           if [ -x vendor/bin/phpstan ]; then
@@ -172,8 +175,10 @@ jobs:
               echo "parameters:"
               echo "  level: 6"
               echo "  treatPhpDocTypesAsCertain: false"
-              echo "  checkMissingIterableValueType: false"
               echo "  paths: []"
+              echo "  stubFiles:"
+              echo "    - vendor/php-stubs/wordpress-stubs/wordpress-stubs.php"
+              echo "    - vendor/php-stubs/wordpress-tests-stubs/wordpress-tests-stubs.php"
               echo "  excludePaths:"
               echo "    analyse:"
               echo "      - vendor/*"
@@ -201,7 +206,7 @@ jobs:
             echo "phpstan not installed; skipping"
           fi
 
-      # 7) 先読みで定数＆SQLiteファイル場所を定義
+      # --- CI用の定数と SQLite の保存先を先読み定義 ---
       - name: Create CI prepend (defines only)
         run: |
           set -e
@@ -216,7 +221,7 @@ jobs:
           } > "$GITHUB_WORKSPACE/ci-prepend.php"
           echo "wrote $GITHUB_WORKSPACE/ci-prepend.php"
 
-      # 8) サニティチェック（WPはロードしない）
+      # --- サニティチェック ---
       - name: Sanity check (paths & extensions)
         run: |
           php -r '
@@ -228,7 +233,7 @@ jobs:
             echo "sqlite3 loaded? ".(extension_loaded("sqlite3")?"yes":"no")."\n";
           '
 
-      # 9) PHPUnit 実行（SQLiteで起動するはず）
+      # --- PHPUnit ---
       - name: PHPUnit
         env:
           WP_PHP_BINARY: php
