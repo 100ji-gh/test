@@ -35,7 +35,7 @@ jobs:
           if [ -f wordpress/wp-settings.php ]; then
             echo "Core already present at ./wordpress"
           else
-            # 1) 必要パッケージを確実に導入（core と SQLite ドロップイン）
+            # 1) 必要パッケージを導入（core と SQLite ドロップイン）
             composer require --no-interaction --prefer-dist \
               johnpbloch/wordpress-core:^6.8 \
               aaemnnosttv/wp-sqlite-db:^1.3
@@ -73,13 +73,27 @@ jobs:
             test -f wordpress/wp-settings.php
           fi
 
-          # 4) SQLite ドロップインを配置
+          # 4) SQLite ドロップイン(db.php)を探索して ./wordpress/wp-content に配置
           mkdir -p wordpress/wp-content
-          if [ -f vendor/aaemnnosttv/wp-sqlite-db/src/db.php ]; then
-            cp -f vendor/aaemnnosttv/wp-sqlite-db/src/db.php wordpress/wp-content/db.php
-          else
-            echo "FATAL: SQLite drop-in missing"; exit 1
+          DB_SRC=""
+          for f in \
+            vendor/aaemnnosttv/wp-sqlite-db/src/db.php \
+            vendor/aaemnnosttv/wp-sqlite-db/db.php \
+            wordpress/wp-content/plugins/wp-sqlite-db/db.php \
+            wp-content/plugins/wp-sqlite-db/db.php
+          do
+            if [ -f "$f" ]; then DB_SRC="$f"; break; fi
+          done
+          if [ -z "$DB_SRC" ]; then
+            DB_SRC=$(find . -maxdepth 6 -type f -name db.php -path "*/wp-sqlite-db/*" | head -n1 || true)
           fi
+          if [ -z "$DB_SRC" ]; then
+            echo "FATAL: SQLite drop-in missing (wp-sqlite-db/db.php not found)"
+            find . -maxdepth 6 -type f -name db.php -path "*/wp-sqlite-db/*" || true
+            exit 1
+          fi
+          cp -f "$DB_SRC" wordpress/wp-content/db.php
+          echo "SQLite drop-in: $DB_SRC -> wordpress/wp-content/db.php"
 
           # 5) データディレクトリ（SQLite DB の置き場）
           mkdir -p tmp
@@ -103,7 +117,7 @@ jobs:
             // SQLite 明示（ドロップイン既定でも動くが、揺らぎ防止）
             $cfg .= "if(!defined(\"DB_DIR\"))define(\"DB_DIR\",\"{$root}/tmp/\");\n";
             $cfg .= "if(!defined(\"DB_FILE\"))define(\"DB_FILE\",\"wptests.sqlite\");\n";
-            // WordPress 慣例上の定義（SQLite では実質未使用）
+            // WordPress 慣例の定義（SQLite では実質未使用）
             $cfg .= "define(\"DB_NAME\",\"wptests\");\n";
             $cfg .= "define(\"DB_USER\",\"root\");\n";
             $cfg .= "define(\"DB_PASSWORD\",\"\");\n";
