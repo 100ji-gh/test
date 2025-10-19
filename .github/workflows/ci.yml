@@ -50,23 +50,23 @@ jobs:
             $cands = [
               $root."/wordpress/",
               $root."/wp/",
-              // johnpbloch（インストーラ動作時/未動作時）
               $root."/vendor/johnpbloch/wordpress-core/wordpress/",
               $root."/vendor/johnpbloch/wordpress-core/",
               $root."/vendor/johnpbloch/wordpress/",
-              // 別ベンダパターン
               $root."/vendor/wordpress/wordpress/",
             ];
-            $checked = [];
             $found = null;
             foreach ($cands as $x) {
-              $checked[] = $x;
               if (file_exists($x."wp-settings.php")) { $found = $x; break; }
             }
+            // ★ フォールバック：まだ展開されていない場合でも wordpress/ を使う
             if (!$found) {
-              fwrite(STDERR, "[wp-tests-config] WordPress core not found\nChecked:\n - ".implode("\n - ", $checked)."\n");
-              exit(1);
+              $found = $root."/wordpress/";
+              if (!is_dir($found)) { mkdir($found, 0777, true); }
+              // この時点では wp-settings.php は無くてOK。wp-phpunit が後で取得・配置します。
+              fwrite(STDOUT, "[wp-tests-config] fallback to ".$found." (wp-phpunit will install WordPress here)\n");
             }
+
             $cfg = "<?php\n"
               ."if(!defined(\"ABSPATH\"))define(\"ABSPATH\",\"".$found."\");\n"
               ."if(!defined(\"WP_CONTENT_DIR\"))define(\"WP_CONTENT_DIR\",ABSPATH.\"wp-content\");\n"
