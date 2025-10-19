@@ -177,6 +177,20 @@ jobs:
           } > "$GITHUB_WORKSPACE/.phpstan-wp-min-stubs.php"
           echo "wrote .phpstan-wp-min-stubs.php"
 
+      # ---- Sanity: test-plugin.php に \add_filter があるか表示（デバッグ用）----
+      - name: Sanity: grep add_filter call
+        run: |
+          set -e
+          echo "---- grep in test-plugin.php ----"
+          if [ -f test-plugin.php ]; then
+            nl -ba test-plugin.php | sed -n '1,80p'
+            echo
+            grep -n "add_filter" -n test-plugin.php || true
+          else
+            echo "test-plugin.php not found at repo root"
+          fi
+
+      # ---- PHPStan（スタブを絶対パスで stubFiles + bootstrapFiles + scanFiles） ----
       - name: PHPStan (scoped & CI config)
         run: |
           if [ -x vendor/bin/phpstan ]; then
@@ -191,6 +205,8 @@ jobs:
               echo "  stubFiles:"
               echo "    - $STUB"
               echo "  bootstrapFiles:"
+              echo "    - $STUB"
+              echo "  scanFiles:"
               echo "    - $STUB"
               echo "  excludePaths:"
               echo "    analyse:"
@@ -238,7 +254,7 @@ jobs:
           } > "$GITHUB_WORKSPACE/ci-prepend.php"
           echo "wrote $GITHUB_WORKSPACE/ci-prepend.php"
 
-      # ---- ここで bootstrap.php を自動生成（無ければ作る）----
+      # ---- PHPUnit bootstrap を自動生成（無ければ）----
       - name: Ensure PHPUnit bootstrap (WordPress)
         run: |
           set -e
