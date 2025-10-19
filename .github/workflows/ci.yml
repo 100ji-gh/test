@@ -41,40 +41,49 @@ jobs:
       - name: Install deps
         run: composer install --no-interaction --prefer-dist --no-progress
 
-      # ベンダ配下の WordPress 実体を ./wordpress へリンクして ABSPATH を固定化
-      - name: Link WordPress core into ./wordpress
+      # ──────────────────────────────────────────────────────────────────────
+      # WordPress 実体を ./wordpress に固定 → wp-tests-config を生成
+      # ──────────────────────────────────────────────────────────────────────
+      - name: Prepare WordPress core & wp-tests-config.php
         run: |
           set -e
-          if [ -f wordpress/wp-settings.php ]; then
-            echo "wordpress/ already present"
-            exit 0
-          fi
-          for d in \
-            vendor/johnpbloch/wordpress-core/wordpress \
-            vendor/johnpbloch/wordpress \
-            vendor/wordpress/wordpress
-          do
-            if [ -f "$d/wp-settings.php" ]; then
-              ln -s "$PWD/$d" wordpress
-              echo "Linked $d -> wordpress"
-              exit 0
-            fi
-          done
-          echo "No vendor WordPress found; installing via composer..."
-          composer require johnpbloch/wordpress-core:^6.8 --no-interaction --prefer-dist
-          ln -s "$PWD/vendor/johnpbloch/wordpress-core/wordpress" wordpress
-          echo "Linked vendor/johnpbloch/wordpress-core/wordpress -> wordpress"
 
-      # ABSPATH を ./wordpress に固定して wp-tests-config.php を生成
-      - name: Ensure wp-tests-config.php
-        run: |
-          set -e
+          # 1) ./wordpress に WordPress コアを用意（既存ならスキップ）
+          if [ -f wordpress/wp-settings.php ]; then
+            echo "Core already present at ./wordpress"
+          else
+            # ベンダ配下を探索して見つかれば ./wordpress へリンク
+            for d in \
+              vendor/johnpbloch/wordpress-core/wordpress \
+              vendor/johnpbloch/wordpress \
+              vendor/wordpress/wordpress
+            do
+              if [ -f "$d/wp-settings.php" ]; then
+                ln -s "$PWD/$d" wordpress
+                echo "Linked $d -> wordpress"
+                break
+              fi
+            done
+          fi
+
+          # 見つからなければ composer で導入してリンク
+          if [ ! -f wordpress/wp-settings.php ]; then
+            echo "Installing WordPress core via Composer..."
+            composer require johnpbloch/wordpress-core:^6.8 --no-interaction --prefer-dist
+            ln -s "$PWD/vendor/johnpbloch/wordpress-core/wordpress" wordpress
+            echo "Linked vendor/johnpbloch/wordpress-core/wordpress -> wordpress"
+          fi
+
+          # 2) ABSPATH=./wordpress で wp-tests-config.php を生成
           php -r '
-            $root = getenv("GITHUB_WORKSPACE") ?: __DIR__;
-            $found = $root."/wordpress/";
-            if (!is_dir($found)) { fwrite(STDERR, "[wp-tests-config] ./wordpress missing\n"); exit(1); }
+            $root  = getenv("GITHUB_WORKSPACE") ?: __DIR__;
+            $wpdir = $root."/wordpress/";
+            if (!is_dir($wpdir) || !file_exists($wpdir."wp-settings.php")) {
+              fwrite(STDERR, "[wp-tests-config] wordpress core still missing\n");
+              exit(1);
+            }
             $cfg = "<?php\n"
-              ."if(!defined(\"ABSPATH\"))define(\"ABSPATH\",\"".$found."\");\n"
+              ."if(!defined(\"ABSPATH\"))define(\"ABSPATH\",\"".$wpdir."\");\n"
               ."if(!defined(\"WP_CONTENT_DIR\"))define(\"WP_CONTENT_DIR\",ABSPATH.\"wp-content\");\n"
               ."if(!defined(\"WP_TESTS_DOMAIN\"))define(\"WP_TESTS_DOMAIN\",\"example.org\");\n"
               ."if(!defined(\"WP_TESTS_EMAIL\"))define(\"WP_TESTS_EMAIL\",\"admin@example.org\");\n"
@@ -90,7 +99,31 @@ jobs:
             file_put_contents($root."/wp-tests-config.php", $cfg);
           '
 
-      # SQLite ドロップインを ./wordpress/wp-content へ配置（存在すれば）
+      # tests/phpunit/bootstrap.php が無い環境でも赤にしないためのフォールバック
+      - name: Ensure tests/phpunit/bootstrap.php (fallback)
+        run: |
+          set -e
+          if [ -f tests/phpunit/bootstrap.php ]; then
+            echo "bootstrap.php exists"
+            exit 0
+          fi
+          mkdir -p tests/phpunit
+          cat > tests/phpunit/bootstrap.php <<'PHP'
+          <?php
+          $_tests_dir = getenv('WP_PHPUNIT__DIR');
+          if (! $_tests_dir || ! file_exists($_tests_dir . '/includes/bootstrap.php')) {
+            fwrite(STDERR, "WP_PHPUNIT__DIR invalid\n");
+            exit(1);
+          }
+          require $_tests_dir . '/includes/functions.php';
+          tests_add_filter('muplugins_loaded', static function () {
+            require_once dirname(__DIR__, 2) . '/test-plugin.php';
+          });
+          require $_tests_dir . '/includes/bootstrap.php';
+          PHP
+          echo "Wrote tests/phpunit/bootstrap.php"
+
+      # SQLite ドロップインを ./wordpress/wp-content に配置（あれば）
       - name: Ensure SQLite drop-in
         run: |
           set -e
