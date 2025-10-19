@@ -1,10 +1,16 @@
 <?php
+declare(strict_types=1);
+
 /**
- * Plugin Name: Test – Sample
+ * Plugin Name: Hide For Guests (CI)
+ * Description: Sample filter to demonstrate CI with WordPress.
+ * Author: CI
  */
 
-if ( ! defined( 'ABSPATH' ) ) {
-	exit;
-}
-
-require_once __DIR__ . '/includes/test-utils.php';
+\add_filter('the_title', static function (string $title): string {
+    // 未ログインのゲストにはタイトルにタグを付けるサンプル
+    if (!\is_user_logged_in()) {
+        return '[guest] ' . $title;
+    }
+    return $title;
+}, 10, 1);
