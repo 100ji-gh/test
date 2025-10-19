@@ -31,50 +31,57 @@ jobs:
         run: |
           set -e
 
-          # 1) 必要パッケージを確実に導入
-          composer require --no-interaction --prefer-dist \
-            johnpbloch/wordpress-core:^6.8 \
-            aaemnnosttv/wp-sqlite-db:^1.3
+          # 0) 既に ./wordpress があるなら何もしない
+          if [ -f wordpress/wp-settings.php ]; then
+            echo "Core already present at ./wordpress"
+          else
+            # 1) 必要パッケージを確実に導入（core と SQLite ドロップイン）
+            composer require --no-interaction --prefer-dist \
+              johnpbloch/wordpress-core:^6.8 \
+              aaemnnosttv/wp-sqlite-db:^1.3
 
-          # 2) WordPress コアの実体を特定
-          WP_SRC=""
-          for d in \
-            wordpress \
-            vendor/johnpbloch/wordpress-core/wordpress \
-            vendor/johnpbloch/wordpress \
-            vendor/wordpress/wordpress
-          do
-            if [ -f "$d/wp-settings.php" ]; then
-              WP_SRC="$d"
-              break
+            # 2) WordPress コアの実体を特定（直下 or /wordpress 配下の両方に対応）
+            WP_SRC=""
+            for d in \
+              wordpress \
+              vendor/johnpbloch/wordpress-core/wordpress \
+              vendor/johnpbloch/wordpress-core \
+              vendor/johnpbloch/wordpress \
+              vendor/wordpress/wordpress
+            do
+              if [ -f "$d/wp-settings.php" ]; then
+                WP_SRC="$d"
+                break
+              fi
+            done
+
+            if [ -z "$WP_SRC" ]; then
+              echo "FATAL: WordPress core not found after composer install"
+              find . -maxdepth 4 -type f -name wp-settings.php || true
+              exit 1
             fi
-          done
 
-          if [ -z "$WP_SRC" ]; then
-            echo "FATAL: WordPress core not found after composer install"
-            find . -maxdepth 4 -type f -name wp-settings.php || true
-            exit 1
-          fi
+            # 3) ./wordpress を WP_SRC に向ける（WP_SRC が ./wordpress 以外のときのみ）
+            if [ "$WP_SRC" = "wordpress" ]; then
+              echo "WordPress is already at ./wordpress"
+            else
+              rm -rf wordpress
+              ln -s "$PWD/$WP_SRC" wordpress || (rm -rf wordpress && cp -a "$WP_SRC" wordpress)
+            fi
 
-          # 3) ./wordpress を WP_SRC に向ける（リンク優先、失敗時コピー）
-          rm -rf wordpress
-          ln -s "$PWD/$WP_SRC" wordpress || cp -a "$WP_SRC" wordpress
-          if [ ! -f wordpress/wp-settings.php ]; then
-            echo "Link failed, copying..."
-            rm -rf wordpress
-            cp -a "$WP_SRC" wordpress
+            # 最終確認
+            test -f wordpress/wp-settings.php
           fi
-          test -f wordpress/wp-settings.php
 
           # 4) SQLite ドロップインを配置
           mkdir -p wordpress/wp-content
           if [ -f vendor/aaemnnosttv/wp-sqlite-db/src/db.php ]; then
-            cp vendor/aaemnnosttv/wp-sqlite-db/src/db.php wordpress/wp-content/db.php
+            cp -f vendor/aaemnnosttv/wp-sqlite-db/src/db.php wordpress/wp-content/db.php
           else
             echo "FATAL: SQLite drop-in missing"; exit 1
           fi
 
-          # 5) データディレクトリ（SQLite ファイル置場）
+          # 5) データディレクトリ（SQLite DB の置き場）
           mkdir -p tmp
           chmod -R 777 tmp
 
@@ -93,10 +100,10 @@ jobs:
             $cfg .= "if(!defined(\"WP_TESTS_EMAIL\"))define(\"WP_TESTS_EMAIL\",\"admin@example.org\");\n";
             $cfg .= "if(!defined(\"WP_TESTS_TITLE\"))define(\"WP_TESTS_TITLE\",\"Test Site\");\n";
             $cfg .= "if(!defined(\"WP_PHP_BINARY\"))define(\"WP_PHP_BINARY\",\"php\");\n";
-            // SQLite 用：ドロップインの既定でも動くが、明示しておく
+            // SQLite 明示（ドロップイン既定でも動くが、揺らぎ防止）
             $cfg .= "if(!defined(\"DB_DIR\"))define(\"DB_DIR\",\"{$root}/tmp/\");\n";
             $cfg .= "if(!defined(\"DB_FILE\"))define(\"DB_FILE\",\"wptests.sqlite\");\n";
-            // WordPress のお作法として DB_* は定義しておく（SQLite では実質未使用）
+            // WordPress 慣例上の定義（SQLite では実質未使用）
             $cfg .= "define(\"DB_NAME\",\"wptests\");\n";
             $cfg .= "define(\"DB_USER\",\"root\");\n";
             $cfg .= "define(\"DB_PASSWORD\",\"\");\n";
@@ -114,7 +121,6 @@ jobs:
           if [ -x vendor/bin/phpcs ]; then
             paths=""
             for d in includes src lib app; do [ -d "$d" ] && paths="$paths $d"; done
-            # ルート直下の *.php（設定ファイルは除外）
             root_files=$(find . -maxdepth 1 -type f -name '*.php' \
               ! -name 'wp-tests-config.php' \
               ! -name 'ci-prepend.php' \
@@ -141,8 +147,7 @@ jobs:
             if [ -f phpstan.neon ]; then
               vendor/bin/phpstan analyse --no-progress -c phpstan.neon || exit 1
             else
-              # フォールバック（対象がなければスキップ）
-              { 
+              {
                 echo "parameters:"
                 echo "  level: 6"
                 echo "  treatPhpDocTypesAsCertain: false"
