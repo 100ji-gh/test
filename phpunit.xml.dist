@@ -6,8 +6,8 @@
   stopOnFailure="false"
 >
   <testsuites>
+    <!-- WordPress テストだけを実行 -->
     <testsuite name="wp">
-      <!-- WordPress向けテストのみを実行 -->
       <directory suffix="Test.php">tests/phpunit</directory>
     </testsuite>
   </testsuites>
