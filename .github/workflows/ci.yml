@@ -41,20 +41,32 @@ jobs:
       - name: Install deps
         run: composer install --no-interaction --prefer-dist --no-progress
 
-      # ── ここから下は既存の“SQLiteでWPテスト”前提（MySQLは使いません） ──
-      - name: Ensure wp-tests-config.php (vendor WordPress を自動検出)
+      # WordPress コアを複数の可能性から検出して wp-tests-config.php を生成
+      - name: Ensure wp-tests-config.php
         run: |
           set -e
           php -r '
             $root = getenv("GITHUB_WORKSPACE") ?: __DIR__;
             $cands = [
               $root."/wordpress/",
+              $root."/wp/",
+              // johnpbloch（インストーラ動作時/未動作時）
               $root."/vendor/johnpbloch/wordpress-core/wordpress/",
+              $root."/vendor/johnpbloch/wordpress-core/",
               $root."/vendor/johnpbloch/wordpress/",
+              // 別ベンダパターン
+              $root."/vendor/wordpress/wordpress/",
             ];
+            $checked = [];
             $found = null;
-            foreach ($cands as $x) { if (file_exists($x."wp-settings.php")) { $found = $x; break; } }
-            if (!$found) { fwrite(STDERR, "[wp-tests-config] WordPress core not found\n"); exit(1); }
+            foreach ($cands as $x) {
+              $checked[] = $x;
+              if (file_exists($x."wp-settings.php")) { $found = $x; break; }
+            }
+            if (!$found) {
+              fwrite(STDERR, "[wp-tests-config] WordPress core not found\nChecked:\n - ".implode("\n - ", $checked)."\n");
+              exit(1);
+            }
             $cfg = "<?php\n"
               ."if(!defined(\"ABSPATH\"))define(\"ABSPATH\",\"".$found."\");\n"
               ."if(!defined(\"WP_CONTENT_DIR\"))define(\"WP_CONTENT_DIR\",ABSPATH.\"wp-content\");\n"
@@ -72,6 +84,31 @@ jobs:
             file_put_contents($root."/wp-tests-config.php", $cfg);
           '
 
+      # （必要に応じて）SQLite ドロップインを配置
+      - name: Ensure SQLite drop-in
+        run: |
+          set -e
+          WP_DIR=$(php -r '
+            $root = getenv("GITHUB_WORKSPACE") ?: __DIR__;
+            $cands = [
+              $root."/wordpress/",
+              $root."/wp/",
+              $root."/vendor/johnpbloch/wordpress-core/wordpress/",
+              $root."/vendor/johnpbloch/wordpress-core/",
+              $root."/vendor/johnpbloch/wordpress/",
+              $root."/vendor/wordpress/wordpress/",
+            ];
+            foreach ($cands as $x) { if (file_exists($x."wp-settings.php")) { echo $x; exit; } }
+            exit(1);
+          ')
+          if [ -f vendor/aaemnnosttv/wp-sqlite-db/src/db.php ]; then
+            mkdir -p "${WP_DIR}/wp-content"
+            cp vendor/aaemnnosttv/wp-sqlite-db/src/db.php "${WP_DIR}/wp-content/db.php"
+          else
+            echo "aaemnnosttv/wp-sqlite-db not present; skipping copy"
+          fi
+          mkdir -p tmp && chmod -R 777 tmp
+
       - name: PHPCS
         run: |
           if [ -x vendor/bin/phpcs ]; then
@@ -79,7 +116,7 @@ jobs:
             paths=""
             for d in includes src lib app; do [ -d "$d" ] && paths="$paths $d"; done
             shopt -s nullglob; for f in *.php; do [ "$f" != "wp-tests-config.php" ] && paths="$paths $f"; done
-            if [ -z "$(echo "$paths" | tr -d ' ')" ]; then echo "No PHP sources to sniff; skipping"; exit 0; fi
+            if [ -z "$(echo "$paths" | tr -d " ")" ]; then echo "No PHP sources to sniff; skipping"; exit 0; fi
             vendor/bin/phpcs \
               --standard=WordPress-Extra \
               --extensions=php \
