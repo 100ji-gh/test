@@ -155,7 +155,8 @@ jobs:
             echo "phpcs not installed; skipping"
           fi
 
-      - name: Generate minimal WP stubs (PHPStan)
+      # ====== ★ PHPStan 用：最小 WP スタブを生成 ======
+      - name: Generate minimal WP stubs for PHPStan
         run: |
           set -e
           {
@@ -176,12 +177,12 @@ jobs:
           } > "$GITHUB_WORKSPACE/.phpstan-wp-min-stubs.php"
           echo "wrote .phpstan-wp-min-stubs.php"
 
-      - name: PHPStan
+      # ====== ★ PHPStan：スタブを stubFiles + bootstrapFiles + scanFiles で読込 ======
+      - name: PHPStan (use stubs)
         run: |
           if [ -x vendor/bin/phpstan ]; then
             set -e
-            CWD="${GITHUB_WORKSPACE:-$(pwd)}"
-            STUB="$CWD/.phpstan-wp-min-stubs.php"
+            STUB="$GITHUB_WORKSPACE/.phpstan-wp-min-stubs.php"
             {
               echo "parameters:"
               echo "  level: 6"
@@ -239,7 +240,7 @@ jobs:
           } > "$GITHUB_WORKSPACE/ci-prepend.php"
           echo "wrote $GITHUB_WORKSPACE/ci-prepend.php"
 
-      - name: Ensure PHPUnit bootstrap
+      - name: Ensure PHPUnit bootstrap (WordPress)
         run: |
           set -e
           mkdir -p tests/phpunit
