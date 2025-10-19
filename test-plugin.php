@@ -8,7 +8,6 @@ declare(strict_types=1);
  */
 
 \add_filter('the_title', static function (string $title): string {
-    // 未ログインのゲストにはタイトルにタグを付けるサンプル
     if (!\is_user_logged_in()) {
         return '[guest] ' . $title;
     }
