@@ -41,45 +41,38 @@ jobs:
       - name: Install deps
         run: composer install --no-interaction --prefer-dist --no-progress
 
-      - name: Ensure WordPress core (if missing)
+      # ベンダ配下の WordPress 実体を ./wordpress へリンクして ABSPATH を固定化
+      - name: Link WordPress core into ./wordpress
         run: |
           set -e
-          # もう在ればスキップ
-          if [ -f wordpress/wp-settings.php ] \
-             || [ -f vendor/johnpbloch/wordpress-core/wordpress/wp-settings.php ] \
-             || [ -f vendor/johnpbloch/wordpress/wp-settings.php ]; then
-            echo "WordPress core already present."
-          else
-            echo "Installing WordPress core via Composer..."
-            composer require johnpbloch/wordpress-core:^6.8 --no-interaction --prefer-dist
+          if [ -f wordpress/wp-settings.php ]; then
+            echo "wordpress/ already present"
+            exit 0
           fi
+          for d in \
+            vendor/johnpbloch/wordpress-core/wordpress \
+            vendor/johnpbloch/wordpress \
+            vendor/wordpress/wordpress
+          do
+            if [ -f "$d/wp-settings.php" ]; then
+              ln -s "$PWD/$d" wordpress
+              echo "Linked $d -> wordpress"
+              exit 0
+            fi
+          done
+          echo "No vendor WordPress found; installing via composer..."
+          composer require johnpbloch/wordpress-core:^6.8 --no-interaction --prefer-dist
+          ln -s "$PWD/vendor/johnpbloch/wordpress-core/wordpress" wordpress
+          echo "Linked vendor/johnpbloch/wordpress-core/wordpress -> wordpress"
 
-      # WordPress コアを複数の可能性から検出して wp-tests-config.php を生成
+      # ABSPATH を ./wordpress に固定して wp-tests-config.php を生成
       - name: Ensure wp-tests-config.php
         run: |
           set -e
           php -r '
             $root = getenv("GITHUB_WORKSPACE") ?: __DIR__;
-            $cands = [
-              $root."/wordpress/",
-              $root."/wp/",
-              $root."/vendor/johnpbloch/wordpress-core/wordpress/",
-              $root."/vendor/johnpbloch/wordpress-core/",
-              $root."/vendor/johnpbloch/wordpress/",
-              $root."/vendor/wordpress/wordpress/",
-            ];
-            $found = null;
-            foreach ($cands as $x) {
-              if (file_exists($x."wp-settings.php")) { $found = $x; break; }
-            }
-            // ★ フォールバック：まだ展開されていない場合でも wordpress/ を使う
-            if (!$found) {
-              $found = $root."/wordpress/";
-              if (!is_dir($found)) { mkdir($found, 0777, true); }
-              // この時点では wp-settings.php は無くてOK。wp-phpunit が後で取得・配置します。
-              fwrite(STDOUT, "[wp-tests-config] fallback to ".$found." (wp-phpunit will install WordPress here)\n");
-            }
-
+            $found = $root."/wordpress/";
+            if (!is_dir($found)) { fwrite(STDERR, "[wp-tests-config] ./wordpress missing\n"); exit(1); }
             $cfg = "<?php\n"
               ."if(!defined(\"ABSPATH\"))define(\"ABSPATH\",\"".$found."\");\n"
               ."if(!defined(\"WP_CONTENT_DIR\"))define(\"WP_CONTENT_DIR\",ABSPATH.\"wp-content\");\n"
@@ -97,29 +90,14 @@ jobs:
             file_put_contents($root."/wp-tests-config.php", $cfg);
           '
 
-      # （必要に応じて）SQLite ドロップインを配置
+      # SQLite ドロップインを ./wordpress/wp-content へ配置（存在すれば）
       - name: Ensure SQLite drop-in
         run: |
           set -e
-          WP_DIR=$(php -r '
-            $root = getenv("GITHUB_WORKSPACE") ?: __DIR__;
-            $cands = [
-              $root."/wordpress/",
-              $root."/wp/",
-              $root."/vendor/johnpbloch/wordpress-core/wordpress/",
-              $root."/vendor/johnpbloch/wordpress-core/",
-              $root."/vendor/johnpbloch/wordpress/",
-              $root."/vendor/wordpress/wordpress/",
-            ];
-            foreach ($cands as $x) { if (file_exists($x."wp-settings.php")) { echo $x; exit; } }
-            // ★ まだ展開前なら wordpress/ を使う（後で wp-phpunit が中身を入れる）
-            echo $root."/wordpress/";
-          ')
-          echo "WP_DIR=$WP_DIR"
-          mkdir -p "${WP_DIR}/wp-content"
+          mkdir -p wordpress/wp-content
           if [ -f vendor/aaemnnosttv/wp-sqlite-db/src/db.php ]; then
-            cp -f vendor/aaemnnosttv/wp-sqlite-db/src/db.php "${WP_DIR}/wp-content/db.php"
-            echo "Copied SQLite drop-in to ${WP_DIR}/wp-content/db.php"
+            cp -f vendor/aaemnnosttv/wp-sqlite-db/src/db.php wordpress/wp-content/db.php
+            echo "Copied SQLite drop-in to wordpress/wp-content/db.php"
           else
             echo "aaemnnosttv/wp-sqlite-db not present; skipping copy"
           fi
@@ -136,7 +114,7 @@ jobs:
             vendor/bin/phpcs \
               --standard=WordPress-Extra \
               --extensions=php \
-              --ignore=vendor/*,tests/*,tests/wordpress/*,tmp/*,.github/*,node_modules/*,wp-content/* \
+              --ignore=vendor/*,tests/*,tests/wordpress/*,tmp/*,.github/*,node_modules/*,wp-content/*,wordpress/* \
               --warning-severity=0 \
               $paths
           else
