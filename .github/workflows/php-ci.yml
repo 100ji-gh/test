@@ -65,7 +65,7 @@ jobs:
             composer require johnpbloch/wordpress-core:^6.8 johnpbloch/wordpress:^6.8 --no-interaction --prefer-dist || true
           fi
 
-      - name: Normalize WordPress path (create ./wordpress symlink)
+      - name: Normalize WordPress path (symlink ./wordpress)
         run: |
           set -e
           TARGET=""
@@ -82,7 +82,7 @@ jobs:
           ln -s "$TARGET" "$GITHUB_WORKSPACE/wordpress"
           echo "Symlinked wordpress -> $TARGET"
 
-      - name: Ensure SQLite driver (composer or fallback) and place drop-in
+      - name: Ensure SQLite drop-in
         run: |
           set -e
           if [ ! -f vendor/aaemnnosttv/wp-sqlite-db/src/db.php ]; then
@@ -103,7 +103,7 @@ jobs:
           mkdir -p tmp/sqlite-db
           chmod -R 777 tmp
 
-      - name: Create wp-tests-config.php (fixed ABSPATH)
+      - name: Create wp-tests-config.php
         run: |
           set -e
           ROOT="$GITHUB_WORKSPACE"
@@ -132,7 +132,7 @@ jobs:
           make_cfg "$ROOT/tests/wp-tests-config.php"
           make_cfg "$ROOT/tests/phpunit/wp-tests-config.php"
 
-      - name: PHPCS (scoped to source only)
+      - name: PHPCS (source only)
         run: |
           if [ -x vendor/bin/phpcs ]; then
             set -e
@@ -155,8 +155,7 @@ jobs:
             echo "phpcs not installed; skipping"
           fi
 
-      # ---- PHPStan用の最小WPスタブ ----
-      - name: Generate minimal WP stubs for PHPStan
+      - name: Generate minimal WP stubs (PHPStan)
         run: |
           set -e
           {
@@ -177,21 +176,7 @@ jobs:
           } > "$GITHUB_WORKSPACE/.phpstan-wp-min-stubs.php"
           echo "wrote .phpstan-wp-min-stubs.php"
 
-      # ---- Sanity: test-plugin.php に \add_filter があるか表示（デバッグ用）----
-      - name: Sanity: grep add_filter call
-        run: |
-          set -e
-          echo "---- grep in test-plugin.php ----"
-          if [ -f test-plugin.php ]; then
-            nl -ba test-plugin.php | sed -n '1,80p'
-            echo
-            grep -n "add_filter" -n test-plugin.php || true
-          else
-            echo "test-plugin.php not found at repo root"
-          fi
-
-      # ---- PHPStan（スタブを絶対パスで stubFiles + bootstrapFiles + scanFiles） ----
-      - name: PHPStan (scoped & CI config)
+      - name: PHPStan
         run: |
           if [ -x vendor/bin/phpstan ]; then
             set -e
@@ -254,8 +239,7 @@ jobs:
           } > "$GITHUB_WORKSPACE/ci-prepend.php"
           echo "wrote $GITHUB_WORKSPACE/ci-prepend.php"
 
-      # ---- PHPUnit bootstrap を自動生成（無ければ）----
-      - name: Ensure PHPUnit bootstrap (WordPress)
+      - name: Ensure PHPUnit bootstrap
         run: |
           set -e
           mkdir -p tests/phpunit
@@ -279,7 +263,7 @@ jobs:
             echo "tests/phpunit/bootstrap.php exists; keeping as-is"
           fi
 
-      - name: Sanity check (paths & extensions)
+      - name: Sanity check
         run: |
           php -r '
             $root = getenv("GITHUB_WORKSPACE");
