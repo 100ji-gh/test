@@ -42,46 +42,48 @@ jobs:
         run: composer install --no-interaction --prefer-dist --no-progress
 
       # ──────────────────────────────────────────────────────────────────────
-      # WordPress 実体を ./wordpress に固定 → wp-tests-config を生成
+      # WordPress を ./wordpress に“必ず”用意（symlink → 失敗時はコピー）し、
+      # その上で wp-tests-config.php を生成（ABSPATH を ./wordpress に固定）
       # ──────────────────────────────────────────────────────────────────────
       - name: Prepare WordPress core & wp-tests-config.php
         run: |
           set -e
 
-          # 1) ./wordpress に WordPress コアを用意（既存ならスキップ）
-          if [ -f wordpress/wp-settings.php ]; then
-            echo "Core already present at ./wordpress"
-          else
-            # ベンダ配下を探索して見つかれば ./wordpress へリンク
-            for d in \
-              vendor/johnpbloch/wordpress-core/wordpress \
-              vendor/johnpbloch/wordpress \
-              vendor/wordpress/wordpress
-            do
-              if [ -f "$d/wp-settings.php" ]; then
-                ln -s "$PWD/$d" wordpress
-                echo "Linked $d -> wordpress"
-                break
-              fi
-            done
-          fi
+          # 1) ベンダ配下を探す or 無ければ導入
+          WP_SRC=""
+          for d in \
+            vendor/johnpbloch/wordpress-core/wordpress \
+            vendor/johnpbloch/wordpress \
+            vendor/wordpress/wordpress
+          do
+            if [ -f "$d/wp-settings.php" ]; then
+              WP_SRC="$d"
+              break
+            fi
+          done
 
-          # 見つからなければ composer で導入してリンク
-          if [ ! -f wordpress/wp-settings.php ]; then
+          if [ -z "$WP_SRC" ]; then
             echo "Installing WordPress core via Composer..."
             composer require johnpbloch/wordpress-core:^6.8 --no-interaction --prefer-dist
-            ln -s "$PWD/vendor/johnpbloch/wordpress-core/wordpress" wordpress
-            echo "Linked vendor/johnpbloch/wordpress-core/wordpress -> wordpress"
+            WP_SRC="vendor/johnpbloch/wordpress-core/wordpress"
           fi
 
-          # 2) ABSPATH=./wordpress で wp-tests-config.php を生成
+          # 2) ./wordpress を作成（リンク優先、ダメならコピー）
+          rm -rf wordpress
+          ln -s "$PWD/$WP_SRC" wordpress || cp -a "$WP_SRC" wordpress
+
+          # 3) 最終確認（ここで必ず存在させる）
+          if [ ! -f wordpress/wp-settings.php ]; then
+            echo "wp-settings.php still missing. Fallback to copy..."
+            rm -rf wordpress
+            cp -a "$WP_SRC" wordpress
+          fi
+          test -f wordpress/wp-settings.php || { echo "FATAL: wordpress/wp-settings.php not found"; ls -la wordpress || true; exit 1; }
+
+          # 4) ABSPATH=./wordpress で wp-tests-config.php を生成
           php -r '
             $root  = getenv("GITHUB_WORKSPACE") ?: __DIR__;
-            $wpdir = $root."/wordpress/";
-            if (!is_dir($wpdir) || !file_exists($wpdir."wp-settings.php")) {
-              fwrite(STDERR, "[wp-tests-config] wordpress core still missing\n");
-              exit(1);
-            }
+            $wpdir = $root . "/wordpress/";
             $cfg = "<?php\n"
               ."if(!defined(\"ABSPATH\"))define(\"ABSPATH\",\"".$wpdir."\");\n"
               ."if(!defined(\"WP_CONTENT_DIR\"))define(\"WP_CONTENT_DIR\",ABSPATH.\"wp-content\");\n"
@@ -96,10 +98,11 @@ jobs:
               ."define(\"DB_CHARSET\",\"utf8\");\n"
               ."define(\"DB_COLLATE\",\"\");\n"
               ."\$table_prefix=\"wptests_\";\n";
-            file_put_contents($root."/wp-tests-config.php", $cfg);
+            file_put_contents($root . "/wp-tests-config.php", $cfg);
           '
+          echo "Prepared ./wordpress and wp-tests-config.php"
 
-      # tests/phpunit/bootstrap.php が無い環境でも赤にしないためのフォールバック
+      # tests/phpunit/bootstrap.php が無い場合のフォールバック
       - name: Ensure tests/phpunit/bootstrap.php (fallback)
         run: |
           set -e
