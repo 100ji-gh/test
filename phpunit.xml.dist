@@ -1,9 +1,20 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<phpunit bootstrap="tests/bootstrap.php" colors="true">
+<phpunit
+  colors="true"
+  bootstrap="tests/phpunit/bootstrap.php"
+  cacheResult="false"
+  stopOnFailure="false"
+>
   <testsuites>
-    <testsuite name="unit">
-      <directory>tests/Unit</directory>
-      <directory>tests/WordPress</directory>
+    <testsuite name="wp">
+      <!-- WordPress向けテストのみを実行 -->
+      <directory suffix="Test.php">tests/phpunit</directory>
     </testsuite>
   </testsuites>
+
+  <php>
+    <env name="WP_PHPUNIT__DIR" value="vendor/wp-phpunit/wp-phpunit"/>
+    <env name="WP_PHPUNIT__TESTS_CONFIG" value="wp-tests-config.php"/>
+    <env name="WP_PHP_BINARY" value="php"/>
+  </php>
 </phpunit>
