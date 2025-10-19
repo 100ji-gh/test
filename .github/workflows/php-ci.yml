@@ -1,0 +1,287 @@
+name: PHP CI
+
+on:
+  pull_request:
+    branches: [ "main" ]
+  push:
+    branches: [ "feature/**" ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          tools: composer:v2
+          coverage: none
+          extensions: mbstring, intl, zip, dom, curl, sqlite3, pdo_sqlite
+
+      - name: Configure Composer allow-plugins
+        run: |
+          composer config --no-plugins allow-plugins.composer/installers true
+          composer config --no-plugins allow-plugins.dealerdirect/phpcodesniffer-composer-installer true
+          composer config --no-plugins allow-plugins.johnpbloch/wordpress-core-installer true
+
+      - name: Get Composer cache dir
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Composer
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
+          restore-keys: ${{ runner.os }}-composer-
+
+      - name: Install deps
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Ensure WPCS standard
+        run: composer require wp-coding-standards/wpcs:^3 --no-interaction --prefer-dist || true
+
+      - name: Ensure WordPress core (johnpbloch) is present
+        run: |
+          set -e
+          FOUND=0
+          for p in \
+            "$GITHUB_WORKSPACE/wordpress/wp-settings.php" \
+            "$GITHUB_WORKSPACE/vendor/johnpbloch/wordpress-core/wordpress/wp-settings.php" \
+            "$GITHUB_WORKSPACE/vendor/johnpbloch/wordpress/wp-settings.php"
+          do
+            if [ -f "$p" ]; then
+              echo "Found WP core: $p"
+              FOUND=1
+              break
+            fi
+          done
+          if [ "$FOUND" -eq 0 ]; then
+            echo "Installing WordPress core via composer..."
+            composer require johnpbloch/wordpress-core:^6.8 johnpbloch/wordpress:^6.8 --no-interaction --prefer-dist || true
+          fi
+
+      - name: Normalize WordPress path (symlink ./wordpress)
+        run: |
+          set -e
+          TARGET=""
+          if [ -f "$GITHUB_WORKSPACE/wordpress/wp-settings.php" ]; then
+            TARGET="$GITHUB_WORKSPACE/wordpress"
+          elif [ -f "$GITHUB_WORKSPACE/vendor/johnpbloch/wordpress-core/wordpress/wp-settings.php" ]; then
+            TARGET="$GITHUB_WORKSPACE/vendor/johnpbloch/wordpress-core/wordpress"
+          elif [ -f "$GITHUB_WORKSPACE/vendor/johnpbloch/wordpress/wp-settings.php" ]; then
+            TARGET="$GITHUB_WORKSPACE/vendor/johnpbloch/wordpress"
+          else
+            echo "WordPress core not found after install"; exit 1
+          fi
+          rm -rf "$GITHUB_WORKSPACE/wordpress"
+          ln -s "$TARGET" "$GITHUB_WORKSPACE/wordpress"
+          echo "Symlinked wordpress -> $TARGET"
+
+      - name: Ensure SQLite drop-in
+        run: |
+          set -e
+          if [ ! -f vendor/aaemnnosttv/wp-sqlite-db/src/db.php ]; then
+            composer require aaemnnosttv/wp-sqlite-db:^1.3 --no-interaction --prefer-dist || true
+          fi
+          if [ ! -f vendor/aaemnnosttv/wp-sqlite-db/src/db.php ]; then
+            echo "[fallback] raw fetch"
+            mkdir -p vendor/aaemnnosttv/wp-sqlite-db/src
+            curl -sSLo vendor/aaemnnosttv/wp-sqlite-db/src/db.php https://raw.githubusercontent.com/aaemnnosttv/wp-sqlite-db/v1.3.2/src/db.php
+          fi
+          test -f vendor/aaemnnosttv/wp-sqlite-db/src/db.php || { echo "db.php still missing"; exit 1; }
+          mkdir -p "$GITHUB_WORKSPACE/wordpress/wp-content"
+          cp -f vendor/aaemnnosttv/wp-sqlite-db/src/db.php "$GITHUB_WORKSPACE/wordpress/wp-content/db.php"
+
+      - name: Prepare temp dirs
+        run: |
+          set -e
+          mkdir -p tmp/sqlite-db
+          chmod -R 777 tmp
+
+      - name: Create wp-tests-config.php
+        run: |
+          set -e
+          ROOT="$GITHUB_WORKSPACE"
+          make_cfg() {
+            p="$1"
+            mkdir -p "$(dirname "$p")"
+            {
+              echo "<?php"
+              echo "if(!defined('ABSPATH')) define('ABSPATH', '$ROOT/wordpress/');"
+              echo "if(!defined('WP_CONTENT_DIR')) define('WP_CONTENT_DIR', ABSPATH . 'wp-content');"
+              echo "if(!defined('WP_TESTS_DOMAIN')) define('WP_TESTS_DOMAIN', 'example.org');"
+              echo "if(!defined('WP_TESTS_EMAIL'))  define('WP_TESTS_EMAIL',  'admin@example.org');"
+              echo "if(!defined('WP_TESTS_TITLE'))  define('WP_TESTS_TITLE',  'Test Site');"
+              echo "if(!defined('WP_PHP_BINARY'))   define('WP_PHP_BINARY',   'php');"
+              echo "define('DB_NAME', 'wptests');"
+              echo "define('DB_USER', 'root');"
+              echo "define('DB_PASSWORD', '');"
+              echo "define('DB_HOST', 'localhost');"
+              echo "define('DB_CHARSET', 'utf8');"
+              echo "define('DB_COLLATE', '');"
+              echo "\$table_prefix = 'wptests_';"
+            } > "$p"
+            echo "wrote $p"
+          }
+          make_cfg "$ROOT/wp-tests-config.php"
+          make_cfg "$ROOT/tests/wp-tests-config.php"
+          make_cfg "$ROOT/tests/phpunit/wp-tests-config.php"
+
+      - name: PHPCS (source only)
+        run: |
+          if [ -x vendor/bin/phpcs ]; then
+            set -e
+            paths=""
+            for d in includes src lib app; do [ -d "$d" ] && paths="$paths $d"; done
+            root_files=$(find . -maxdepth 1 -type f -name '*.php' \
+              ! -name 'wp-tests-config.php' \
+              ! -name 'ci-prepend.php' \
+              -printf '%P\n' | xargs -r echo)
+            paths="$paths $root_files"
+            if [ -z "$(echo "$paths" | tr -d ' ')" ]; then echo "No PHP sources to sniff; skipping"; exit 0; fi
+            echo "PHPCS targets:$paths"
+            vendor/bin/phpcs \
+              --standard=WordPress-Extra \
+              --extensions=php \
+              --ignore=vendor/*,tests/*,tests/wordpress/*,tmp/*,.git/*,.github/*,node_modules/*,wp-content/* \
+              --warning-severity=0 \
+              $paths
+          else
+            echo "phpcs not installed; skipping"
+          fi
+
+      # ====== ★ PHPStan 用：最小 WP スタブを生成 ======
+      - name: Generate minimal WP stubs for PHPStan
+        run: |
+          set -e
+          {
+            echo "<?php"
+            echo "if (!function_exists('add_filter')) {"
+            echo "  function add_filter(string \$hook_name, callable \$callback, int \$priority = 10, int \$accepted_args = 1): bool {}"
+            echo "}"
+            echo "if (!function_exists('add_action')) {"
+            echo "  function add_action(string \$hook_name, callable \$callback, int \$priority = 10, int \$accepted_args = 1): bool {}"
+            echo "}"
+            echo "if (!function_exists('apply_filters')) {"
+            echo "  /** @param mixed \$value @param mixed ...\$args @return mixed */"
+            echo "  function apply_filters(string \$hook_name, mixed \$value, mixed ...\$args): mixed { return \$value; }"
+            echo "}"
+            echo "if (!function_exists('is_user_logged_in')) {"
+            echo "  function is_user_logged_in(): bool {}"
+            echo "}"
+          } > "$GITHUB_WORKSPACE/.phpstan-wp-min-stubs.php"
+          echo "wrote .phpstan-wp-min-stubs.php"
+
+      # ====== ★ PHPStan：スタブを stubFiles + bootstrapFiles + scanFiles で読込 ======
+      - name: PHPStan (use stubs)
+        run: |
+          if [ -x vendor/bin/phpstan ]; then
+            set -e
+            STUB="$GITHUB_WORKSPACE/.phpstan-wp-min-stubs.php"
+            {
+              echo "parameters:"
+              echo "  level: 6"
+              echo "  treatPhpDocTypesAsCertain: false"
+              echo "  paths: []"
+              echo "  stubFiles:"
+              echo "    - $STUB"
+              echo "  bootstrapFiles:"
+              echo "    - $STUB"
+              echo "  scanFiles:"
+              echo "    - $STUB"
+              echo "  excludePaths:"
+              echo "    analyse:"
+              echo "      - vendor/*"
+              echo "      - tests/*"
+              echo "      - tests/wordpress/*"
+              echo "      - tmp/*"
+              echo "      - .github/*"
+              echo "      - wp-content/*"
+              echo "      - node_modules/*"
+              echo "      - .phpstan-wp-min-stubs.php"
+            } > phpstan-ci.neon
+
+            paths=""
+            for d in includes src lib app; do [ -d "$d" ] && paths="$paths $d"; done
+            root_files=$(find . -maxdepth 1 -type f -name '*.php' \
+              ! -name 'wp-tests-config.php' \
+              ! -name 'ci-prepend.php' \
+              ! -name '.phpstan-wp-min-stubs.php' \
+              -printf '%P\n' | xargs -r echo)
+            paths="$paths $root_files"
+
+            if [ -z "$(echo "$paths" | tr -d ' ')" ]; then
+              echo "No PHP sources to analyse; skipping"
+              exit 0
+            fi
+
+            echo "PHPStan targets:$paths"
+            vendor/bin/phpstan analyse --no-progress --configuration=phpstan-ci.neon $paths
+          else
+            echo "phpstan not installed; skipping"
+          fi
+
+      - name: Create CI prepend (defines only)
+        run: |
+          set -e
+          {
+            echo "<?php"
+            echo "if (!defined('WP_TESTS_DOMAIN')) define('WP_TESTS_DOMAIN', 'example.org');"
+            echo "if (!defined('WP_TESTS_EMAIL'))  define('WP_TESTS_EMAIL',  'admin@example.org');"
+            echo "if (!defined('WP_TESTS_TITLE'))  define('WP_TESTS_TITLE',  'Test Site');"
+            echo "if (!defined('WP_PHP_BINARY'))   define('WP_PHP_BINARY',   'php');"
+            echo "if (!defined('DB_DIR'))  define('DB_DIR', getenv('GITHUB_WORKSPACE').'/tmp/sqlite-db/');"
+            echo "if (!defined('DB_FILE')) define('DB_FILE', 'wptests.sqlite');"
+          } > "$GITHUB_WORKSPACE/ci-prepend.php"
+          echo "wrote $GITHUB_WORKSPACE/ci-prepend.php"
+
+      - name: Ensure PHPUnit bootstrap (WordPress)
+        run: |
+          set -e
+          mkdir -p tests/phpunit
+          if [ ! -f tests/phpunit/bootstrap.php ]; then
+            ROOT="$GITHUB_WORKSPACE"
+            {
+              echo "<?php"
+              echo "\$_tests_dir = getenv('WP_PHPUNIT__DIR');"
+              echo "if (!\$_tests_dir || !file_exists(\$_tests_dir.'/includes/bootstrap.php')) {"
+              echo "  fwrite(STDERR, 'WP_PHPUNIT__DIR invalid' . PHP_EOL);"
+              echo "  exit(1);"
+              echo "}"
+              echo "require \$_tests_dir.'/includes/functions.php';"
+              echo "tests_add_filter('muplugins_loaded', function () {"
+              echo "  require_once '$ROOT/test-plugin.php';"
+              echo "});"
+              echo "require \$_tests_dir.'/includes/bootstrap.php';"
+            } > tests/phpunit/bootstrap.php
+            echo "wrote tests/phpunit/bootstrap.php"
+          else
+            echo "tests/phpunit/bootstrap.php exists; keeping as-is"
+          fi
+
+      - name: Sanity check
+        run: |
+          php -r '
+            $root = getenv("GITHUB_WORKSPACE");
+            $abs  = $root."/wordpress/";
+            echo "ABSPATH: $abs\n";
+            echo "db.php exists? ".(file_exists($abs."wp-content/db.php")?"yes":"no")."\n";
+            echo "pdo_sqlite loaded? ".(extension_loaded("pdo_sqlite")?"yes":"no")."\n";
+            echo "sqlite3 loaded? ".(extension_loaded("sqlite3")?"yes":"no")."\n";
+          '
+
+      - name: PHPUnit
+        env:
+          WP_PHP_BINARY: php
+          WP_PHPUNIT__DIR: ${{ github.workspace }}/vendor/wp-phpunit/wp-phpunit
+          WP_PHPUNIT__TESTS_CONFIG: ${{ github.workspace }}/wp-tests-config.php
+        run: |
+          set -e
+          test -f "$GITHUB_WORKSPACE/wp-tests-config.php" || { echo "wp-tests-config.php missing"; exit 1; }
+          test -f "$GITHUB_WORKSPACE/ci-prepend.php" || { echo "ci-prepend.php missing"; exit 1; }
+          php -d auto_prepend_file="$GITHUB_WORKSPACE/ci-prepend.php" vendor/bin/phpunit -c phpunit.xml.dist
