@@ -41,6 +41,19 @@ jobs:
       - name: Install deps
         run: composer install --no-interaction --prefer-dist --no-progress
 
+      - name: Ensure WordPress core (if missing)
+        run: |
+          set -e
+          # もう在ればスキップ
+          if [ -f wordpress/wp-settings.php ] \
+             || [ -f vendor/johnpbloch/wordpress-core/wordpress/wp-settings.php ] \
+             || [ -f vendor/johnpbloch/wordpress/wp-settings.php ]; then
+            echo "WordPress core already present."
+          else
+            echo "Installing WordPress core via Composer..."
+            composer require johnpbloch/wordpress-core:^6.8 --no-interaction --prefer-dist
+          fi
+
       # WordPress コアを複数の可能性から検出して wp-tests-config.php を生成
       - name: Ensure wp-tests-config.php
         run: |
