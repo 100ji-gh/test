@@ -1,26 +1,22 @@
 <?php
+declare(strict_types=1);
+
 /**
- * @group hide_for_guests
+ * @group hide-for-guests
  */
-class Hide_For_Guests_Test extends WP_UnitTestCase {
+class HideForGuestsTest extends WP_UnitTestCase {
 
-	public function test_guests_get_replacement() {
-		// 未ログインにする。
-		wp_set_current_user( 0 );
+    public function test_title_prefixed_for_guests(): void {
+        // 未ログイン（ゲスト）の想定
+        wp_set_current_user(0);
+        $out = apply_filters('the_title', 'Hello');
+        $this->assertSame('[guest] Hello', $out);
+    }
 
-		$out = apply_filters( 'the_content', 'SECRET' );
-
-		$this->assertIsString( $out );
-		$this->assertStringContainsString( 'Please log in', $out );
-		$this->assertStringNotContainsString( 'SECRET', $out );
-	}
-
-	public function test_logged_in_sees_content() {
-		$user_id = self::factory()->user->create();
-		wp_set_current_user( $user_id );
-
-		$out = apply_filters( 'the_content', 'SECRET' );
-
-		$this->assertSame( 'SECRET', $out );
-	}
+    public function test_title_unchanged_for_logged_in_users(): void {
+        $user_id = self::factory()->user->create();
+        wp_set_current_user($user_id);
+        $out = apply_filters('the_title', 'Hello');
+        $this->assertSame('Hello', $out);
+    }
 }
