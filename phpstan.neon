@@ -1,25 +1,15 @@
 parameters:
   level: 6
   treatPhpDocTypesAsCertain: false
-
   paths:
-    - includes
     - test-plugin.php
-
+    - includes
   stubFiles:
-    - .phpstan-wp-min-stubs.php
-  bootstrapFiles:
-    - .phpstan-wp-min-stubs.php
-  scanFiles:
-    - .phpstan-wp-min-stubs.php
-
+    - tools/.phpstan-wp-min-stubs.php
   excludePaths:
     analyse:
       - vendor/*
       - tests/*
-      - tests/wordpress/*
       - tmp/*
       - .github/*
-      - node_modules/*
-      - wordpress/*
       - wp-content/*
