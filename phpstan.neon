@@ -1,11 +1,16 @@
 parameters:
   level: 6
   treatPhpDocTypesAsCertain: false
+
+  # ★ 解析対象を明示（stubやtestsを解析させない）
   paths:
     - test-plugin.php
     - includes
+
+  # ★ WordPressの最小スタブを読み込み（解析対象にはしない）
   stubFiles:
     - tools/.phpstan-wp-min-stubs.php
+
   excludePaths:
     analyse:
       - vendor/*
@@ -13,3 +18,4 @@ parameters:
       - tmp/*
       - .github/*
       - wp-content/*
+      - tools/*     # 念のため、tools配下も除外
