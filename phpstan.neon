@@ -2,16 +2,17 @@ parameters:
   level: 6
   treatPhpDocTypesAsCertain: false
 
-  # ★ 解析対象を限定（stubやtests等は含めない）
+  # 解析対象は最小限に限定（tests や tools は含めない）
   paths:
     - test-plugin.php
     - includes
 
-  # ★ WP最小スタブを読み込む（解析対象にはしない）
+  # ★ WordPress最小スタブを確実に読ませる
   stubFiles:
-    - tools/.phpstan-wp-min-stubs.php
+    - ./tools/.phpstan-wp-min-stubs.php
+  scanFiles:
+    - ./tools/.phpstan-wp-min-stubs.php
 
-  # 念のため tools 配下も除外（stubFiles には影響しません）
   excludePaths:
     analyse:
       - vendor/*
@@ -19,4 +20,4 @@ parameters:
       - tmp/*
       - .github/*
       - wp-content/*
-      - tools/*
+      - tools/*       # ← 解析はしない（上で scanFiles だけ行う）
