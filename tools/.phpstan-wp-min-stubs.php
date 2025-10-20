@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 /**
  * Minimal WordPress stubs for PHPStan ONLY.
- * Loaded via phpstan.neon "stubFiles". Not used at runtime.
+ * Loaded via phpstan.neon (stubFiles / scanFiles). Not used at runtime.
  */
 
 /** Register a callback for a filter hook. */
