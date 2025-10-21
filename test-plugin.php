@@ -7,18 +7,19 @@
  */
 
 \add_filter(
-    'the_title',
-    static function ( $title ) {
-        // ログイン時は万一付いていたら外す
-        if ( \is_user_logged_in() ) {
-            return \preg_replace( '/^\[guest\]\s*/i', '', $title );
-        }
-        // ゲスト時：既に [guest] が付いていればそのまま、無ければ一度だけ付与
-        if ( \preg_match( '/^\[guest\]\s*/i', $title ) ) {
-            return $title;
-        }
-        return '[guest] ' . $title;
-    },
-    10,
-    1
+	'the_title',
+	static function ( string $title ): string {
+		// ログイン済みなら何もしない
+		if ( \is_user_logged_in() ) {
+			return $title;
+		}
+
+		// 先頭の "[guest]"（あっても）を一旦取り除く
+		$title = \preg_replace( '/^\[guest\]\s*/i', '', $title );
+
+		// 1回だけ付与
+		return '[guest] ' . $title;
+	},
+	10,
+	1
 );
