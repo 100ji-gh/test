@@ -18,7 +18,12 @@
   },
   "config": {
     "allow-plugins": {
-      "dealerdirect/phpcodesniffer-composer-installer": true
+      "dealerdirect/phpcodesniffer-composer-installer": true,
+      "composer/installers": true
     }
+  },
+  "require": {
+    "johnpbloch/wordpress-core": "^6.8",
+    "aaemnnosttv/wp-sqlite-db": "^1.3"
   }
 }
