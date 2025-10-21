@@ -1,7 +1,7 @@
 <?php
 /**
  * Plugin Name: Hide For Guests (CI)
- * Description: (buggy) always prefixes for guests even if already prefixed.
+ * Description: Prefixes post titles for guests exactly once.
  * Author: CI
  * @package hide_for_guests
  */
@@ -9,10 +9,14 @@
 \add_filter(
     'the_title',
     static function ( $title ) {
+        // ログイン時は万一付いていたら外す
         if ( \is_user_logged_in() ) {
+            return \preg_replace( '/^\[guest\]\s*/i', '', $title );
+        }
+        // ゲスト時：既に [guest] が付いていればそのまま、無ければ一度だけ付与
+        if ( \preg_match( '/^\[guest\]\s*/i', $title ) ) {
             return $title;
         }
-        // BUG: 既に [guest] が付いていても、さらに付けてしまう
         return '[guest] ' . $title;
     },
     10,
